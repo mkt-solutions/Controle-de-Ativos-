@@ -1,5 +1,5 @@
 {
-  "name": "controle ativos",
+  "name": "AssetFlow",
   "description": "Sistema profissional de controle e gestão de ativos empresariais com relatórios detalhados.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": []
