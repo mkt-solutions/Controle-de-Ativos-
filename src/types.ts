@@ -7,6 +7,12 @@ export type AssetCategory = 'Hardware' | 'Software' | 'Mobiliário' | 'Veículos
 
 export type AssetStatus = 'Ativo' | 'Em Manutenção' | 'Inativo' | 'Baixado' | 'Emprestado';
 
+export interface Category {
+  id: string;
+  name: string;
+  usefulLifeYears: number;
+}
+
 export interface MaintenanceSession {
   id: string;
   date: string;

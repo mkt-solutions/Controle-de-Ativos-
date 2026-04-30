@@ -1,11 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Asset, AssetCategory, AssetStatus, AuditRecord } from './types';
+import { Asset, AssetCategory, AssetStatus, AuditRecord, Category } from './types';
 
 const STORAGE_KEY = 'asset_master_data';
 const CATEGORIES_KEY = 'asset_master_categories';
 const AUDITS_KEY = 'asset_master_audits';
 
-const INITIAL_CATEGORIES: string[] = ['Hardware', 'Software', 'Mobiliário', 'Veículos', 'Infraestrutura', 'Outros'];
+const INITIAL_CATEGORIES: Category[] = [
+  { id: 'cat-1', name: 'Hardware', usefulLifeYears: 5 },
+  { id: 'cat-2', name: 'Computadores', usefulLifeYears: 5 },
+  { id: 'cat-3', name: 'Impressoras', usefulLifeYears: 5 },
+  { id: 'cat-4', name: 'Mobiliário', usefulLifeYears: 10 },
+  { id: 'cat-5', name: 'Veículos', usefulLifeYears: 5 },
+  { id: 'cat-6', name: 'Máquinas', usefulLifeYears: 10 },
+];
 
 const INITIAL_DATA: Asset[] = [
   {
@@ -62,10 +69,33 @@ const INITIAL_DATA: Asset[] = [
   }
 ];
 
+const generateId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  }
+};
+
 export function useAssets() {
-  const [categories, setCategories] = useState<string[]>(() => {
+  const [categories, setCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem(CATEGORIES_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    if (!saved) return INITIAL_CATEGORIES;
+    try {
+      const parsed = JSON.parse(saved);
+      // Migration for legacy string categories
+      return parsed.map((cat: any, index: number) => {
+        if (typeof cat === 'string') {
+          return { id: `legacy-${index}-${Date.now()}`, name: cat, usefulLifeYears: 10 };
+        }
+        if (cat && typeof cat === 'object' && !cat.id) {
+          return { ...cat, id: `migrated-${index}-${Date.now()}`, usefulLifeYears: cat.usefulLifeYears || 10 };
+        }
+        return cat;
+      });
+    } catch {
+      return INITIAL_CATEGORIES;
+    }
   });
 
   const [assets, setAssets] = useState<Asset[]>(() => {
@@ -133,14 +163,18 @@ export function useAssets() {
     setAudits(prev => prev.filter(a => a.id !== id));
   };
 
-  const addCategory = (name: string) => {
-    if (name && !categories.includes(name)) {
-      setCategories(prev => [...prev, name]);
+  const addCategory = (name: string, usefulLifeYears: number = 10) => {
+    if (name && !categories.some(c => c.name === name)) {
+      setCategories(prev => [...prev, { id: generateId(), name, usefulLifeYears }]);
     }
   };
 
-  const removeCategory = (name: string) => {
-    setCategories(prev => prev.filter(c => c !== name));
+  const updateCategory = (id: string, updates: Partial<Category>) => {
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+
+  const removeCategory = (id: string) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
   };
 
   const addAsset = (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -251,6 +285,7 @@ export function useAssets() {
     categories, 
     audits,
     addCategory, 
+    updateCategory,
     removeCategory, 
     addAsset, 
     updateAsset, 

@@ -2,10 +2,12 @@ import React from 'react';
 import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
-import { Asset, AssetCategory, AssetStatus, AuditRecord } from './types';
+import { Asset, AssetCategory, AssetStatus, AuditRecord, Category } from './types';
 import { cn, formatCurrency, formatDate } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
@@ -177,7 +179,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
   );
 };
 
-const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categories: string[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
+const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categories: Category[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
   const [search, setSearch] = React.useState('');
   const [filterCategory, setFilterCategory] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>(initialStatusFilter || 'all');
@@ -226,6 +228,45 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
+  const handleExportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inventario');
+
+    worksheet.columns = [
+      { header: 'Patrimonio', key: 'tag', width: 15 },
+      { header: 'Nome', key: 'name', width: 30 },
+      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Valor', key: 'value', width: 15 },
+      { header: 'Data Compra', key: 'purchaseDate', width: 15 },
+      { header: 'Localizacao', key: 'location', width: 20 }
+    ];
+
+    filtered.forEach(a => {
+      worksheet.addRow({
+        tag: a.tag,
+        name: a.name,
+        category: a.category,
+        status: a.status,
+        value: a.value,
+        purchaseDate: a.purchaseDate,
+        location: a.location
+      });
+    });
+
+    // Formatting headers
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' }
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, "Inventario_Ativos.xlsx");
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
       <div className="p-6 border-bottom border-slate-100 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -242,14 +283,14 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
             <option value="Emprestado">Emprestado</option>
             <option value="Inativo">Inativo</option>
           </select>
-          <select 
+            <select 
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm cursor-pointer"
           >
             <option value="all">Todas Categorias</option>
             {categories.map(cat => (
-              <option key={cat} value={cat}>{cat}</option>
+              <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
           <input 
@@ -259,12 +300,22 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
             accept=".xlsx, .xls, .csv" 
             className="hidden" 
           />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
-          >
-            <FileUp size={16} /> Importar Excel
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+              title="Importar de arquivo Excel"
+            >
+              <FileUp size={16} /> Importar
+            </button>
+            <button 
+              onClick={handleExportExcel}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-md shadow-emerald-100"
+              title="Exportar lista atual para Excel"
+            >
+              <Download size={16} /> Exportar
+            </button>
+          </div>
         </div>
       </div>
 
@@ -430,14 +481,16 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
   );
 };
 
-const ReportsView = ({ assets }: { assets: Asset[] }) => {
-  const calculateDepreciation = (originalValue: number, purchaseDate: string) => {
+const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categories: Category[], audits: AuditRecord[] }) => {
+  const calculateDepreciation = (originalValue: number, purchaseDate: string, categoryName: string) => {
     const purchase = new Date(purchaseDate);
     const now = new Date();
     const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
     
-    // Supondo vida útil de 5 anos (60 meses)
-    const usefulLifeMonths = 60;
+    const category = categories.find(c => c.name === categoryName);
+    const usefulLifeYears = category ? category.usefulLifeYears : 5;
+    const usefulLifeMonths = usefulLifeYears * 12;
+    
     const monthlyDepreciation = originalValue / usefulLifeMonths;
     const currentDepreciation = Math.min(originalValue, monthlyDepreciation * Math.max(0, monthsElapsed));
     const remainingValue = originalValue - currentDepreciation;
@@ -445,33 +498,85 @@ const ReportsView = ({ assets }: { assets: Asset[] }) => {
     return {
       depreciation: currentDepreciation,
       remaining: remainingValue,
+      monthsRemaining: Math.max(0, usefulLifeMonths - monthsElapsed)
     };
   };
 
-  const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
-  const assetsDepreciation = assets.map(a => ({
+  const assetsWithMeta = assets.map(a => ({
     ...a,
-    ...calculateDepreciation(a.value, a.purchaseDate)
+    ...calculateDepreciation(a.value, a.purchaseDate, a.category)
   }));
 
-  const totalRemainingValue = assetsDepreciation.reduce((acc, curr) => acc + curr.remaining, 0);
+  const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
+  const totalRemainingValue = assetsWithMeta.reduce((acc, curr) => acc + curr.remaining, 0);
   const totalDepreciation = totalOriginalValue - totalRemainingValue;
 
-  const monthlyData = [
-    { month: 'Jan', value: 450000 },
-    { month: 'Fev', value: 460000 },
-    { month: 'Mar', value: 485000 },
-    { month: 'Abr', value: 512000 },
-    { month: 'Mai', value: 540000 },
-    { month: 'Jun', value: totalOriginalValue },
+  // 1. Distribuição por Categoria
+  const categoryData = categories.map(cat => ({
+    name: cat.name,
+    value: assets.filter(a => a.category === cat.name).length
+  })).filter(c => c.value > 0);
+
+  // 2. Locais
+  const locationData = [...new Set(assets.map(a => a.location))].map(loc => ({
+    name: loc,
+    value: assets.filter(a => a.location === loc).length
+  })).sort((a, b) => b.value - a.value).slice(0, 5);
+
+  // 3. Status
+  const statusData = ['Ativo', 'Em Manutenção', 'Inativo', 'Baixado', 'Emprestado'].map(s => ({
+    name: s,
+    value: assets.filter(a => a.status === s).length
+  })).filter(s => s.value > 0);
+
+  // 4. Idade dos ativos
+  const ageData = assets.reduce((acc: any[], a) => {
+    const age = new Date().getFullYear() - new Date(a.purchaseDate).getFullYear();
+    const label = age === 0 ? 'Recente' : age === 1 ? '1 ano' : `${age} anos`;
+    const existing = acc.find(i => i.name === label);
+    if (existing) existing.value++;
+    else acc.push({ name: label, value: 1, age });
+    return acc;
+  }, []).sort((a, b) => a.age - b.age);
+
+  // 5. Depreciação vs Valor Atual
+  const depreciationStacked = [
+    { name: 'Status Financeiro', residual: totalRemainingValue, depreciação: totalDepreciation }
   ];
 
+  // 6. Ativos próximos do fim da vida útil
+  const nearEndOfLife = assetsWithMeta
+    .filter(a => a.status !== 'Baixado')
+    .sort((a, b) => a.monthsRemaining - b.monthsRemaining)
+    .slice(0, 5)
+    .map(a => ({
+      name: a.tag,
+      meses: a.monthsRemaining,
+      fullName: a.name
+    }));
+
+  // 7. Manutenção Acumulada por Categoria
+  const maintenanceData = categories.map(cat => ({
+    name: cat.name,
+    value: assets.filter(a => a.category === cat.name)
+      .reduce((sum, a) => sum + (a.maintenanceHistory?.reduce((s, h) => s + h.cost, 0) || 0), 0)
+  })).filter(c => c.value > 0).sort((a, b) => b.value - a.value);
+
+  // 8. Inventário
+  const latestAudit = audits.filter(a => a.isFinalized).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const auditData = latestAudit ? [
+    { name: 'Encontrados', value: latestAudit.verifiedIds.length },
+    { name: 'Não Encontrados', value: latestAudit.allAssetsSnapshot.length - latestAudit.verifiedIds.length }
+  ] : [];
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1', '#ec4899', '#14b8a6'];
+
   return (
-    <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+    <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 pb-12">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Relatórios Analíticos</h2>
-          <p className="text-slate-500 text-sm">Depreciação estimada e evolução de valor de patrimônio.</p>
+          <p className="text-slate-500 text-sm">Visão geral detalhada do patrimônio e saúde operacional.</p>
         </div>
       </div>
 
@@ -479,7 +584,7 @@ const ReportsView = ({ assets }: { assets: Asset[] }) => {
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Valor Residual Total</p>
           <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalRemainingValue)}</h3>
-          <p className="text-xs text-slate-500 mt-2">Valor atual descontando depreciação (vida útil 5 anos)</p>
+          <p className="text-xs text-slate-500 mt-2">Valor atual descontando depreciação (calculado por categoria)</p>
         </div>
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Acúmulo de Depreciação</p>
@@ -488,26 +593,150 @@ const ReportsView = ({ assets }: { assets: Asset[] }) => {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <h3 className="font-bold text-slate-800 mb-8 px-2">Evolução do Valor Total (BRL)</h3>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94A3B8', fontSize: 11}} />
-              <YAxis axisLine={false} tickLine={false} tick={{fill: '#94A3B8', fontSize: 11}} />
-              <Tooltip 
-                 contentStyle={{ borderRadius: '8px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '12px' }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="value" 
-                stroke="#3b82f6" 
-                strokeWidth={3} 
-                dot={{ r: 4, fill: '#3b82f6', stroke: '#fff', strokeWidth: 1.5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 1. Categoria */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Distribuição por Categoria</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <RePieChart>
+                <Pie data={categoryData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                  {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+              </RePieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 2. Locais */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Principais Locais</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={locationData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} width={100} />
+                <Tooltip cursor={{fill: '#f8fafc'}} />
+                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 3. Status */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Status dos Ativos</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <RePieChart>
+                <Pie data={statusData} dataKey="value" cx="50%" cy="50%" outerRadius={80}>
+                  {statusData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />)}
+                </Pie>
+                <Tooltip />
+              </RePieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 4. Idade */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Idade do Patrimônio</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={ageData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 11}} />
+                <Tooltip cursor={{fill: '#f8fafc'}} />
+                <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={34} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 5. Depreciação x Valor Atual */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Valor Residual vs Depreciação</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={depreciationStacked} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" hide />
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Bar dataKey="residual" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} barSize={40} />
+                <Bar dataKey="depreciação" stackId="a" fill="#ef4444" radius={[0, 4, 4, 0]} barSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 justify-center mt-4">
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#10b981] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Valor Atual</span></div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#ef4444] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Depreciação</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* 6. Fim da vida útil */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4 px-2">
+            <h3 className="text-sm font-bold text-slate-800">Próximos do Fim da Vida Útil</h3>
+            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Meses Restantes</span>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={nearEndOfLife} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} width={80} />
+                <Tooltip cursor={{fill: '#f8fafc'}} />
+                <Bar dataKey="meses" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 7. Manutenção */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 px-2">Custo de Manutenção Acumulado</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={maintenanceData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} tickFormatter={(val) => `R$ ${val/1000}k`} />
+                <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val: number) => formatCurrency(val)} />
+                <Bar dataKey="value" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={34} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 8. Inventário */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4 px-2">
+            <h3 className="text-sm font-bold text-slate-800">Resultado do Último Inventário</h3>
+            {latestAudit && <span className="text-[10px] text-slate-400 font-bold">{formatDate(latestAudit.date)}</span>}
+          </div>
+          <div className="h-64">
+            {auditData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RePieChart>
+                  <Pie data={auditData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                    <Cell fill="#10b981" />
+                    <Cell fill="#ef4444" />
+                  </Pie>
+                  <Tooltip />
+                </RePieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">Nenhum inventário finalizado encontrado.</div>
+            )}
+            <div className="flex gap-4 justify-center mt-4">
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#10b981] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Encontrados</span></div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#ef4444] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Não Encontrados</span></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -546,13 +775,31 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 
 // --- Entry Point ---
 
-const CategoriesView = ({ categories, onAdd, onRemove }: { categories: string[], onAdd: (name: string) => void, onRemove: (name: string) => void }) => {
+const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories: Category[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Category>) => void, onRemove: (id: string) => void }) => {
   const [newCat, setNewCat] = React.useState('');
+  const [newLife, setNewLife] = React.useState<number>(10);
+
+  const DEFAULT_LIVES: Record<string, number> = {
+    'Hardware': 5,
+    'Computadores': 5,
+    'Impressoras': 5,
+    'Mobiliário': 10,
+    'Veículos': 5,
+    'Máquinas': 10
+  };
+
+  const handleNameChange = (val: string) => {
+    setNewCat(val);
+    if (DEFAULT_LIVES[val]) {
+      setNewLife(DEFAULT_LIVES[val]);
+    }
+  };
 
   const handleAdd = () => {
     if (newCat.trim()) {
-      onAdd(newCat.trim());
+      onAdd(newCat.trim(), newLife);
       setNewCat('');
+      setNewLife(10);
     }
   };
 
@@ -560,29 +807,57 @@ const CategoriesView = ({ categories, onAdd, onRemove }: { categories: string[],
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 animate-in zoom-in-95 duration-500 max-w-2xl mx-auto">
       <h3 className="text-xl font-bold text-slate-800 mb-6">Gerenciar Categorias</h3>
       
-      <div className="flex gap-2 mb-8">
-        <input 
-          type="text" 
-          placeholder="Nova categoria..." 
-          value={newCat}
-          onChange={(e) => setNewCat(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          className="flex-1 px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-        />
-        <button 
-          onClick={handleAdd}
-          className="bg-blue-600 px-4 py-2 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2"
-        >
-          <Plus size={18} /> Adicionar
-        </button>
+      <div className="flex flex-col sm:flex-row gap-2 mb-8">
+        <div className="flex-1">
+          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome da Categoria</label>
+          <input 
+            type="text" 
+            placeholder="Nova categoria..." 
+            value={newCat}
+            onChange={(e) => handleNameChange(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+            className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+        <div className="w-full sm:w-32">
+          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Vida Útil (Anos)</label>
+          <input 
+            type="number" 
+            min="1"
+            value={newLife}
+            onChange={(e) => setNewLife(Number(e.target.value))}
+            className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+        <div className="flex items-end">
+          <button 
+            onClick={handleAdd}
+            className="bg-blue-600 px-4 py-2 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2 h-[38px]"
+          >
+            <Plus size={18} /> Adicionar
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2">
         {categories.map(cat => (
-          <div key={cat} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-            <span className="text-sm font-medium text-slate-700">{cat}</span>
+          <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
+            <div className="flex items-center gap-4 flex-1">
+              <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
+                <input 
+                  type="number"
+                  min="1"
+                  value={cat.usefulLifeYears}
+                  onChange={(e) => onUpdate(cat.id, { usefulLifeYears: Number(e.target.value) })}
+                  className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
+                />
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
+              </div>
+            </div>
             <button 
-              onClick={() => onRemove(cat)}
+              onClick={() => onRemove(cat.id)}
               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Trash2 size={14} />
@@ -681,50 +956,62 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
     }
   };
 
-  const exportToExcel = (audit: AuditRecord) => {
-    const headers = [
-      'Codigo Patrimonio',
-      'Localizado',
-      'Item',
-      'Categoria',
-      'Valor',
-      'Data da Leitura',
-      'Responsavel'
+  const exportToExcel = async (audit: AuditRecord) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Conferencia');
+
+    worksheet.columns = [
+      { header: 'Codigo Patrimonio', key: 'tag', width: 20 },
+      { header: 'Localizado', key: 'status', width: 20 },
+      { header: 'Item', key: 'name', width: 30 },
+      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Valor', key: 'value', width: 15 },
+      { header: 'Data da Leitura', key: 'date', width: 20 },
+      { header: 'Responsavel', key: 'auditor', width: 20 }
     ];
 
-    const rows = audit.allAssetsSnapshot.map(item => {
+    audit.allAssetsSnapshot.forEach(item => {
       const isVerified = audit.verifiedIds.includes(item.id);
-      return [
-        `#${item.tag}`,
-        isVerified ? 'LOCALIZADO' : 'NAO LOCALIZADO',
-        item.name,
-        item.category,
-        item.value,
-        formatDate(audit.date),
-        audit.auditorName
-      ];
+      const row = worksheet.addRow({
+        tag: `#${item.tag}`,
+        status: isVerified ? 'LOCALIZADO' : 'NAO LOCALIZADO',
+        name: item.name,
+        category: item.category,
+        value: item.value,
+        date: formatDate(audit.date),
+        auditor: audit.auditorName || 'N/A'
+      });
+
+      // Style Column B (Status)
+      const statusCell = row.getCell(2);
+      if (isVerified) {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFC6EFCE' } // Green
+        };
+        statusCell.font = { color: { argb: 'FF000000' }, bold: true };
+      } else {
+        statusCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFC7CE' } // Red
+        };
+        statusCell.font = { color: { argb: 'FF000000' }, bold: true };
+      }
     });
 
-    // Combine headers and rows, ensuring CSV escaping
-    const escapeCsv = (val: any) => {
-      if (typeof val === 'string' && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
-        return `"${val.replace(/"/g, '""')}"`;
-      }
-      return val;
+    // Formatting headers
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' }
     };
 
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(escapeCsv).join(","))
-      .join("\n");
-
-    const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Relatorio_Controle_${audit.date.split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, `Relatorio_Controle_${audit.date.split('T')[0]}.xlsx`);
   };
 
   const sendToWhatsApp = (audit: AuditRecord) => {
@@ -976,7 +1263,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 };
 
 export default function App() {
-  const { assets, categories, audits, addCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
+  const { assets, categories, audits, addCategory, updateCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -1200,8 +1487,8 @@ export default function App() {
               onBulkUpload={bulkAddAssets}
             />
           )}
-          {view === 'reports' && <ReportsView assets={assets} />}
-          {view === 'categories' && <CategoriesView categories={categories} onAdd={addCategory} onRemove={removeCategory} />}
+          {view === 'reports' && <ReportsView assets={assets} categories={categories} audits={audits} />}
+          {view === 'categories' && <CategoriesView categories={categories} onAdd={addCategory} onUpdate={updateCategory} onRemove={removeCategory} />}
           {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}
         </div>
       </main>
@@ -1226,7 +1513,7 @@ export default function App() {
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
               <select name="category" defaultValue={editingAsset?.category} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
                 {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                  <option key={cat.id} value={cat.name}>{cat.name}</option>
                 ))}
               </select>
             </div>
@@ -1376,8 +1663,8 @@ export default function App() {
                   <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                     <p className="text-[9px] font-bold text-slate-400 uppercase mb-2">Histórico Recente</p>
                     <div className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar">
-                      {editingAsset.maintenanceHistory.map((h, i) => (
-                        <div key={i} className="flex justify-between text-[11px] text-slate-600 border-b border-white pb-1">
+                      {editingAsset.maintenanceHistory.map((h) => (
+                        <div key={h.id} className="flex justify-between text-[11px] text-slate-600 border-b border-white pb-1">
                           <span>{formatDate(h.date)}</span>
                           <span className="font-bold text-red-600">-{formatCurrency(h.cost)}</span>
                         </div>
