@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -492,41 +492,69 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
     document.body.removeChild(link);
   };
 
+  const sendToWhatsApp = (audit: AuditRecord) => {
+    const total = audit.allAssetsSnapshot.length;
+    const found = audit.verifiedIds.length;
+    const notFound = audit.allAssetsSnapshot.filter(a => !audit.verifiedIds.includes(a.id));
+
+    let message = `*RELATÓRIO DE CONFERÊNCIA FÍSICA*\n`;
+    message += `📅 Data: ${formatDate(audit.date)}\n`;
+    message += `👤 Responsável: ${audit.auditorName}\n`;
+    message += `✅ Localizados: ${found} / ${total}\n\n`;
+
+    if (notFound.length > 0) {
+      message += `❌ *ITENS NÃO LOCALIZADOS:*\n`;
+      notFound.forEach(item => {
+        message += `• #${item.tag} - ${item.name}\n`;
+      });
+    } else {
+      message += `✨ Todos os itens foram localizados com sucesso!`;
+    }
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {activeAudit ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 bg-blue-50/50 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-white rounded-lg shadow-sm">
-                <UserCheck size={20} className="text-blue-600" />
+          <div className="p-4 lg:p-6 border-b border-slate-100 bg-blue-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3 lg:gap-4">
+              <div className="p-2 lg:p-3 bg-white rounded-lg shadow-sm shrink-0">
+                <UserCheck size={18} className="text-blue-600" />
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Controle: {activeAudit.auditorName}</h3>
-                <p className="text-xs text-slate-500">Iniciada em {formatDate(activeAudit.date)}</p>
+              <div className="min-w-0">
+                <h3 className="text-base lg:text-lg font-bold text-slate-800 truncate">Controle: {activeAudit.auditorName}</h3>
+                <p className="text-[10px] lg:text-xs text-slate-500">Iniciada em {formatDate(activeAudit.date)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setIsScannerOpen(!isScannerOpen)}
-                className={cn(
-                  "px-4 py-2 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2",
-                  isScannerOpen ? "bg-slate-800 text-white" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                )}
-              >
-                {isScannerOpen ? <X size={14} /> : <Scan size={14} />} 
-                {isScannerOpen ? 'FECHAR LER' : 'LER CÓDIGO'}
-              </button>
-              <div className="text-right mr-4 text-slate-500">
-                <p className="text-[10px] font-bold uppercase">Conferidos</p>
-                <p className="text-sm font-bold text-blue-600">{activeAudit.verifiedIds.length} / {activeAudit.allAssetsSnapshot.length}</p>
+            
+            <div className="flex flex-wrap items-center gap-2 lg:gap-3 justify-between sm:justify-end">
+              <div className="text-left sm:text-right mr-2 lg:mr-4 text-slate-500">
+                <p className="text-[9px] lg:text-[10px] font-bold uppercase">Conferidos</p>
+                <p className="text-xs lg:text-sm font-bold text-blue-600">{activeAudit.verifiedIds.length} / {activeAudit.allAssetsSnapshot.length}</p>
               </div>
-              <button 
-                onClick={() => finalizeAudit(activeAudit.id)}
-                className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-all flex items-center gap-2"
-              >
-                 <Check size={14} /> FINALIZAR SESSÃO
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setIsScannerOpen(!isScannerOpen)}
+                  className={cn(
+                    "px-3 py-2 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2",
+                    isScannerOpen ? "bg-slate-800 text-white" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  )}
+                >
+                  {isScannerOpen ? <X size={14} /> : <Scan size={14} />} 
+                  <span className="hidden xs:inline">{isScannerOpen ? 'FECHAR LER' : 'LER CÓDIGO'}</span>
+                  <span className="xs:hidden">{isScannerOpen ? 'FECHAR' : 'LER'}</span>
+                </button>
+                <button 
+                  onClick={() => finalizeAudit(activeAudit.id)}
+                  className="px-3 py-2 bg-emerald-600 text-white text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-all flex items-center gap-2"
+                >
+                   <Check size={14} /> <span className="hidden xs:inline">FINALIZAR SESSÃO</span><span className="xs:hidden">FINALIZAR</span>
+                </button>
+              </div>
             </div>
           </div>
           <AnimatePresence>
@@ -605,6 +633,13 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
                 <div key={audit.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md relative group flex flex-col">
                   <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
+                      onClick={() => sendToWhatsApp(audit)}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                      title="Enviar por WhatsApp"
+                    >
+                      <MessageCircle size={14} />
+                    </button>
+                    <button 
                       onClick={() => exportToExcel(audit)}
                       className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
                       title="Exportar para Excel"
@@ -653,12 +688,20 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
                       </div>
                     </div>
                   )}
-                  <button 
-                    onClick={() => exportToExcel(audit)}
-                    className="w-full mt-4 py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Download size={14} /> EXPORTAR EXCEL
-                  </button>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button 
+                      onClick={() => exportToExcel(audit)}
+                      className="py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] lg:text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Download size={14} /> EXCEL
+                    </button>
+                    <button 
+                      onClick={() => sendToWhatsApp(audit)}
+                      className="py-2 border border-emerald-100 bg-[#25D366]/10 text-[#075E54] rounded-lg text-[10px] lg:text-xs font-bold hover:bg-[#25D366]/20 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <MessageCircle size={14} /> WHATSAPP
+                    </button>
+                  </div>
                 </div>
               );
             })}
