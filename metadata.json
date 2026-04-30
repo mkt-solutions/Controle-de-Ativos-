@@ -1,0 +1,6 @@
+{
+  "name": "controle ativos",
+  "description": "Sistema profissional de controle e gestão de ativos empresariais com relatórios detalhados.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
