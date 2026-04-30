@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -678,6 +678,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 export default function App() {
   const { assets, categories, audits, addCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingAsset, setEditingAsset] = React.useState<Asset | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -734,20 +735,44 @@ export default function App() {
   };
 
   return (
-    <div className="w-full h-screen bg-slate-50 text-slate-900 font-sans flex overflow-hidden">
+    <div className="w-full h-screen bg-slate-50 text-slate-900 font-sans flex overflow-hidden relative">
+      {/* Sidebar Overlay (Mobile Only) */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-slate-900 flex flex-col border-r border-slate-800 shrink-0">
-        <div className="p-6">
-          <div className="flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white text-sm">AF</div>
-            <span className="text-white font-semibold text-lg tracking-tight">AssetFlow</span>
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 flex flex-col border-r border-slate-800 transition-transform duration-300 transform lg:translate-x-0 lg:static lg:inset-auto shrink-0",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-6 flex-1 flex flex-col">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white text-sm">AF</div>
+              <span className="text-white font-semibold text-lg tracking-tight">AssetFlow</span>
+            </div>
+            <button 
+              onClick={() => setIsSidebarOpen(false)}
+              className="p-2 text-slate-400 hover:text-white lg:hidden"
+            >
+              <X size={20} />
+            </button>
           </div>
           <nav className="space-y-1">
-            <SidebarItem icon={LayoutDashboard} label="Painel Geral" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
-            <SidebarItem icon={Box} label="Inventário" active={view === 'list'} onClick={() => setView('list')} />
-            <SidebarItem icon={ClipboardCheck} label="Controle" active={view === 'audit'} onClick={() => setView('audit')} />
-            <SidebarItem icon={PieChart} label="Relatórios" active={view === 'reports'} onClick={() => setView('reports')} />
-            <SidebarItem icon={Settings} label="Configurações" active={view === 'categories'} onClick={() => setView('categories')} />
+            <SidebarItem icon={LayoutDashboard} label="Painel Geral" active={view === 'dashboard'} onClick={() => { setView('dashboard'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={Box} label="Inventário" active={view === 'list'} onClick={() => { setView('list'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={ClipboardCheck} label="Controle" active={view === 'audit'} onClick={() => { setView('audit'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={PieChart} label="Relatórios" active={view === 'reports'} onClick={() => { setView('reports'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={Settings} label="Configurações" active={view === 'categories'} onClick={() => { setView('categories'); setIsSidebarOpen(false); }} />
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-800">
@@ -764,12 +789,18 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0 relative z-20">
-          <div className="flex items-center gap-8">
-            <h2 className="text-lg font-bold text-slate-800 leading-none min-w-[120px]">
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 shrink-0 relative z-20">
+          <div className="flex items-center gap-3 lg:gap-8 overflow-hidden">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg lg:hidden shrink-0"
+            >
+              <Menu size={20} />
+            </button>
+            <h2 className="text-base lg:text-lg font-bold text-slate-800 leading-none truncate min-w-fit">
               {view === 'dashboard' ? 'Painel Geral' : view === 'list' ? 'Inventário' : view === 'reports' ? 'Relatórios' : view === 'audit' ? 'Controle Físico' : 'Configurações'}
             </h2>
-            <div className="relative w-80">
+            <div className="relative hidden md:block w-80">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
                 <Search size={16} />
               </span>
@@ -782,17 +813,33 @@ export default function App() {
               />
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 lg:gap-4 shrink-0">
             {view !== 'categories' && view !== 'audit' && (
               <button 
                 onClick={() => { setEditingAsset(null); setIsModalOpen(true); }}
-                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-blue-700 active:scale-95 transition-all"
+                className="px-3 lg:px-4 py-2 bg-blue-600 text-white text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap"
               >
-                + NOVO ATIVO
+                + NOVO <span className="hidden sm:inline">ATIVO</span>
               </button>
             )}
           </div>
         </header>
+
+        {/* Mobile Search Bar (only shown on small screens) */}
+        <div className="p-4 bg-white border-b border-slate-100 md:hidden block shrink-0">
+          <div className="relative w-full">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+              <Search size={16} />
+            </span>
+            <input 
+              type="text" 
+              placeholder="Buscar ativos..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ring-inset outline-none transition-all" 
+            />
+          </div>
+        </div>
 
         {/* Scrollable Region */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
