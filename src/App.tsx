@@ -360,31 +360,54 @@ const CategoriesView = ({ categories, onAdd, onRemove }: { categories: string[],
 };
 
 const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
-  React.useEffect(() => {
-    const scanner = new Html5QrcodeScanner(
-      "reader",
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      /* verbose= */ false
-    );
+  const [error, setError] = React.useState<string | null>(null);
 
-    scanner.render(onScan, (error) => {
-      // Slow down error logging
-      if (error && typeof error === 'string' && !error.includes('NotFoundException')) {
-         console.warn(error);
+  React.useEffect(() => {
+    const html5QrCode = new Html5Qrcode("reader");
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    const startScanner = async () => {
+      try {
+        await html5QrCode.start(
+          { facingMode: "environment" }, // Prioritize back camera
+          config,
+          (decodedText) => {
+            onScan(decodedText);
+          },
+          () => {} // silent failure for frames without matches
+        );
+        setError(null);
+      } catch (err) {
+        console.error("Erro ao iniciar câmera:", err);
+        setError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
       }
-    });
+    };
+
+    startScanner();
 
     return () => {
-      scanner.clear().catch(err => console.error("Failed to clear scanner", err));
+      if (html5QrCode.isScanning) {
+        html5QrCode.stop().catch(err => console.error("Erro ao parar scanner:", err));
+      }
     };
   }, [onScan]);
 
   return (
-    <div className="bg-slate-900 rounded-xl overflow-hidden shadow-2xl">
-      <div id="reader" className="w-full"></div>
+    <div className="bg-slate-900 rounded-xl overflow-hidden shadow-2xl relative min-h-[300px] flex flex-col">
+      <div id="reader" className="w-full h-full flex-1"></div>
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 p-6 text-center">
+          <div className="text-white">
+            <Camera size={32} className="mx-auto mb-3 text-red-500" />
+            <p className="text-sm font-medium">{error}</p>
+            <p className="text-xs text-slate-400 mt-2">Certifique-se de que o site tem permissão para usar a câmera.</p>
+          </div>
+        </div>
+      )}
       <div className="p-4 bg-slate-800 text-white text-center">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Escaneando Código...</p>
-        <p className="text-[10px] text-slate-500 mt-1 italic">Posicione o código de barras ou QR Code no centro</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center justify-center gap-2">
+          <Scan size={14} className="animate-pulse" /> Escaneando Código...
+        </p>
       </div>
     </div>
   );
@@ -396,7 +419,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
   const [auditorName, setAuditorName] = React.useState('');
   const [isScannerOpen, setIsScannerOpen] = React.useState(false);
 
-  const handleScan = (decodedText: string) => {
+  const handleScan = React.useCallback((decodedText: string) => {
     if (!activeAudit) return;
 
     // The tag scanned might include the # prefix or not
@@ -410,10 +433,9 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
     if (asset) {
       if (!activeAudit.verifiedIds.includes(asset.id)) {
         toggleAssetAudit(activeAudit.id, asset.id);
-        // Visual or audio feedback could be added here
       }
     }
-  };
+  }, [activeAudit, toggleAssetAudit]);
 
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
