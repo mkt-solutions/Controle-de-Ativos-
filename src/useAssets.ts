@@ -161,6 +161,16 @@ export function useAssets() {
     setAssets(prev => prev.filter(a => a.id !== id));
   };
 
+  const bulkAddAssets = (newAssets: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>[]) => {
+    const prepared = newAssets.map(asset => ({
+      ...asset,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    setAssets(prev => [...prepared, ...prev]);
+  };
+
   const stats = useMemo(() => {
     const totalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
     
@@ -174,9 +184,62 @@ export function useAssets() {
       return acc;
     }, {} as Record<string, number>);
 
+    const totalMaintenanceCost = assets.reduce((acc, asset) => {
+      const history = asset.maintenanceHistory || [];
+      return acc + history.reduce((hAcc, hCurr) => hAcc + hCurr.cost, 0);
+    }, 0);
+
+    const alerts = assets.reduce((acc, asset) => {
+      const today = new Date();
+      const tenDaysFromNow = new Date();
+      tenDaysFromNow.setDate(today.getDate() + 10);
+
+      const checkNear = (dateStr?: string) => {
+        if (!dateStr) return false;
+        const date = new Date(dateStr);
+        return date >= today && date <= tenDaysFromNow;
+      };
+
+      const getEffectiveNextMaintenanceDate = (asset: Asset) => {
+        if (!asset.nextMaintenanceDate) return null;
+        let nextDate = new Date(asset.nextMaintenanceDate);
+        
+        if (asset.hasPreventiveMaintenance && asset.maintenanceIntervalMonths && asset.maintenanceIntervalMonths > 0) {
+          // If the date is in the past, calculate the next occurrence
+          while (nextDate < today) {
+            nextDate.setMonth(nextDate.getMonth() + asset.maintenanceIntervalMonths);
+          }
+        }
+        return nextDate;
+      };
+
+      const effectiveMaintenanceDate = getEffectiveNextMaintenanceDate(asset);
+      if (effectiveMaintenanceDate && effectiveMaintenanceDate <= tenDaysFromNow) {
+        acc.push({ 
+          id: asset.id, 
+          name: asset.name, 
+          type: 'Manutenção', 
+          date: effectiveMaintenanceDate.toISOString().split('T')[0]
+        });
+      }
+
+      if (asset.hasWarranty && checkNear(asset.warrantyExpirationDate)) {
+        acc.push({ 
+          id: asset.id, 
+          name: asset.name, 
+          type: 'Garantia', 
+          date: asset.warrantyExpirationDate! 
+        });
+      }
+
+      return acc;
+    }, [] as { id: string, name: string, type: string, date: string }[]);
+
     return {
       totalAssets: assets.length,
       totalValue,
+      totalMaintenanceCost,
+      alerts,
       byCategory: Object.entries(byCategory).map(([name, value]) => ({ name, value })),
       byStatus: Object.entries(byStatus).map(([name, value]) => ({ name, value })),
       recentActivity: [...assets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5)
@@ -192,6 +255,7 @@ export function useAssets() {
     addAsset, 
     updateAsset, 
     deleteAsset, 
+    bulkAddAssets,
     startAudit,
     toggleAssetAudit,
     finalizeAudit,

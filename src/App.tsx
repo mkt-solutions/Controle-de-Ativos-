@@ -1,6 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
+import * as XLSX from 'xlsx';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
@@ -57,8 +58,39 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
           trendColor="text-amber-600"
           onClick={onMaintenanceClick}
         />
+        
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[100px] max-h-[100px] overflow-hidden">
+          <div className="flex items-center gap-2 mb-2 shrink-0">
+            <div className="p-1.5 bg-red-50 rounded-lg">
+              <Bell size={14} className="text-red-600" />
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Alertas Próximos</p>
+          </div>
+          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1.5">
+            {stats.alerts && stats.alerts.length > 0 ? (
+              stats.alerts.map((alert: any) => (
+                <div key={`${alert.id}-${alert.type}-${alert.date}`} className="flex items-center justify-between gap-2 p-1.5 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={cn("p-1 rounded-full", alert.type === 'Garantia' ? "bg-blue-100" : "bg-amber-100")}>
+                      {alert.type === 'Garantia' ? <Search size={8} /> : <Clock size={8} />}
+                    </div>
+                    <p className="text-[10px] font-medium text-slate-700 truncate">{alert.name}</p>
+                  </div>
+                  <p className={cn("text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded", alert.type === 'Garantia' ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>
+                    {alert.type} {alert.date.split('-').reverse().join('/')}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-slate-300">
+                <Check size={16} className="mb-0.5" />
+                <p className="text-[9px] font-medium">Nenhum alerta crítico</p>
+              </div>
+            )}
+          </div>
+        </div>
+
         <StatCard label="Valor Patrimonial" value={formatCurrency(stats.totalValue)} trend="Depreciação: 8%" />
-        <StatCard label="Vida Útil Média" value="4.2 Anos" trend="Meta: 5.0" trendColor="text-blue-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -145,10 +177,46 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
   );
 };
 
-const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEdit }: { assets: Asset[], categories: string[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void }) => {
+const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categories: string[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
   const [search, setSearch] = React.useState('');
   const [filterCategory, setFilterCategory] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>(initialStatusFilter || 'all');
+  const [expandedRowId, setExpandedRowId] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data: any[] = XLSX.utils.sheet_to_json(ws);
+      
+      const mappedAssets = data.map(item => ({
+        name: item.Nome || item.name || '',
+        tag: String(item.Patrimonio || item.tag || ''),
+        category: (item.Categoria || item.category || 'Outros') as AssetCategory,
+        status: 'Ativo' as AssetStatus,
+        value: Number(item.Valor || item.value || 0),
+        purchaseDate: item['Data de Compra'] || item.purchaseDate || new Date().toISOString().split('T')[0],
+        location: item.Localizacao || item.location || 'Nao Informado',
+        maintenanceHistory: [],
+        hasPreventiveMaintenance: false,
+        maintenanceIntervalMonths: 0,
+        hasWarranty: false,
+      })).filter(a => a.name && a.tag);
+
+      if (mappedAssets.length > 0) {
+        onBulkUpload(mappedAssets);
+        alert(`${mappedAssets.length} ativos importados com sucesso!`);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const filtered = assets.filter(a => {
     const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -184,6 +252,19 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept=".xlsx, .xls, .csv" 
+            className="hidden" 
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+          >
+            <FileUp size={16} /> Importar Excel
+          </button>
         </div>
       </div>
 
@@ -196,39 +277,151 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
               <th className="px-6 py-4">Categoria</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Localização</th>
+              <th className="px-6 py-4">Manutenção</th>
               <th className="px-6 py-4 text-right">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filtered.map((asset) => (
-              <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors group">
-                <td className="px-6 py-4 font-mono text-xs text-slate-400">#{asset.tag}</td>
-                <td className="px-6 py-4 font-medium text-slate-800">{asset.name}</td>
-                <td className="px-6 py-4 text-slate-500">{asset.category}</td>
-                <td className="px-6 py-4">
-                  <span className={cn(
-                    "px-2 py-1 text-[10px] rounded-full uppercase font-bold",
-                    asset.status === 'Ativo' ? "bg-emerald-100 text-emerald-700" :
-                    asset.status === 'Em Manutenção' ? "bg-amber-100 text-amber-700" :
-                    asset.status === 'Emprestado' ? "bg-blue-100 text-blue-700" :
-                    "bg-slate-100 text-slate-700"
-                  )}>
-                    {asset.status}
-                  </span>
-                  {asset.status === 'Em Manutenção' && asset.maintenanceNotes && (
-                    <p className="text-[10px] text-amber-600 mt-1 font-medium italic">
-                      📍 {asset.maintenanceNotes}
-                    </p>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-slate-500">{asset.location}</td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex items-center justify-end gap-2 group-hover:opacity-100 opacity-20 transition-opacity">
-                    <button onClick={() => onEdit(asset)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"><Edit2 size={14} /></button>
-                    <button onClick={() => onDelete(asset.id)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
-                  </div>
-                </td>
-              </tr>
+              <React.Fragment key={asset.id}>
+                <tr className={cn(
+                  "hover:bg-slate-50/50 transition-colors group",
+                  expandedRowId === asset.id ? "bg-blue-50/30" : ""
+                )}>
+                  <td className="px-6 py-4 font-mono text-xs text-slate-400">#{asset.tag}</td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <p className="font-bold text-slate-800">{asset.name}</p>
+                      {asset.status === 'Em Manutenção' && asset.maintenanceNotes && (
+                        <p className="text-[10px] text-amber-600 mt-1 font-medium italic">
+                          📍 {asset.maintenanceNotes}
+                        </p>
+                      )}
+                      {asset.status === 'Inativo' && asset.inactiveReason && (
+                        <p className="text-[10px] text-red-500 mt-1 font-medium leading-tight max-w-[150px]">
+                          ⚠️ {asset.inactiveReason}
+                        </p>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-slate-500">{asset.category}</td>
+                  <td className="px-6 py-4 focus:outline-none">
+                    <span className={cn(
+                      "px-2 py-1 text-[10px] rounded-full uppercase font-bold",
+                      asset.status === 'Ativo' ? "bg-emerald-100 text-emerald-700" :
+                      asset.status === 'Em Manutenção' ? "bg-amber-100 text-amber-700" :
+                      asset.status === 'Emprestado' ? "bg-blue-100 text-blue-700" :
+                      "bg-slate-100 text-slate-700"
+                    )}>
+                      {asset.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-slate-500">{asset.location}</td>
+                  <td className="px-6 py-4">
+                    {asset.maintenanceHistory && asset.maintenanceHistory.length > 0 ? (
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Total Gasto</p>
+                        <p className="text-xs font-semibold text-red-600">{formatCurrency(asset.maintenanceHistory.reduce((acc, curr) => acc + curr.cost, 0))}</p>
+                      </div>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2 group-hover:opacity-100 opacity-20 transition-opacity">
+                      <button 
+                        onClick={() => setExpandedRowId(expandedRowId === asset.id ? null : asset.id)}
+                        className={cn(
+                          "p-1.5 transition-colors",
+                          expandedRowId === asset.id ? "text-blue-600 bg-blue-50 rounded-lg" : "text-slate-400 hover:text-blue-600"
+                        )}
+                        title="Ver Ativo"
+                      >
+                        <Eye size={14} />
+                      </button>
+                      <button onClick={() => onEdit(asset)} className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors" title="Editar"><Edit2 size={14} /></button>
+                      <button onClick={() => onDelete(asset.id)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+                {expandedRowId === asset.id && (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-6 bg-slate-50 border-y border-slate-100 animate-in slide-in-from-top-2 duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <div className="space-y-4">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2 flex items-center gap-2">
+                             <Info size={12} /> Detalhes Gerais
+                          </h4>
+                          <div className="grid grid-cols-2 gap-y-3">
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Data de Compra</p>
+                              <p className="text-xs text-slate-800">{formatDate(asset.purchaseDate)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Valor Original</p>
+                              <p className="text-xs text-slate-800">{formatCurrency(asset.value)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Próxima Manutenção</p>
+                              <p className="text-xs text-slate-800">
+                                {asset.nextMaintenanceDate ? formatDate(asset.nextMaintenanceDate) : 'Não agendada'}
+                                {asset.hasPreventiveMaintenance && asset.maintenanceIntervalMonths ? (
+                                  <span className="text-[10px] text-blue-600 ml-1 font-bold">(Recorrente: {asset.maintenanceIntervalMonths}m)</span>
+                                ) : null}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Garantia</p>
+                              <p className={cn("text-xs", asset.hasWarranty ? "text-blue-600 font-bold" : "text-slate-500")}>
+                                {asset.hasWarranty ? `Expira ${formatDate(asset.warrantyExpirationDate!)}` : 'Sem garantia'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2 flex items-center gap-2">
+                             <History size={12} /> Histórico de Manutenção
+                          </h4>
+                          <div className="max-h-[120px] overflow-y-auto custom-scrollbar space-y-2">
+                            {asset.maintenanceHistory && asset.maintenanceHistory.length > 0 ? (
+                              asset.maintenanceHistory.map((h) => (
+                                <div key={h.id} className="p-2 bg-white rounded border border-slate-200 text-[11px] flex justify-between items-start">
+                                  <div>
+                                    <p className="font-bold text-slate-800">{formatDate(h.date)}</p>
+                                    <p className="text-slate-500 leading-tight mt-0.5">{h.notes}</p>
+                                  </div>
+                                  <span className="font-bold text-red-600">-{formatCurrency(h.cost)}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-[11px] text-slate-400 italic py-4 text-center">Nenhuma manutenção registrada.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2 flex items-center gap-2">
+                             <MapPin size={12} /> Localização & Notas
+                          </h4>
+                          <div className="space-y-3">
+                             <div>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Local Atual</p>
+                                <p className="text-xs text-slate-800">{asset.location}</p>
+                             </div>
+                             {asset.description && (
+                               <div>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase">Observações</p>
+                                  <p className="text-xs text-slate-600 leading-relaxed">{asset.description}</p>
+                               </div>
+                             )}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -238,13 +431,39 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
 };
 
 const ReportsView = ({ assets }: { assets: Asset[] }) => {
+  const calculateDepreciation = (originalValue: number, purchaseDate: string) => {
+    const purchase = new Date(purchaseDate);
+    const now = new Date();
+    const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
+    
+    // Supondo vida útil de 5 anos (60 meses)
+    const usefulLifeMonths = 60;
+    const monthlyDepreciation = originalValue / usefulLifeMonths;
+    const currentDepreciation = Math.min(originalValue, monthlyDepreciation * Math.max(0, monthsElapsed));
+    const remainingValue = originalValue - currentDepreciation;
+    
+    return {
+      depreciation: currentDepreciation,
+      remaining: remainingValue,
+    };
+  };
+
+  const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
+  const assetsDepreciation = assets.map(a => ({
+    ...a,
+    ...calculateDepreciation(a.value, a.purchaseDate)
+  }));
+
+  const totalRemainingValue = assetsDepreciation.reduce((acc, curr) => acc + curr.remaining, 0);
+  const totalDepreciation = totalOriginalValue - totalRemainingValue;
+
   const monthlyData = [
     { month: 'Jan', value: 450000 },
     { month: 'Fev', value: 460000 },
     { month: 'Mar', value: 485000 },
     { month: 'Abr', value: 512000 },
     { month: 'Mai', value: 540000 },
-    { month: 'Jun', value: assets.reduce((a, b) => a + b.value, 0) },
+    { month: 'Jun', value: totalOriginalValue },
   ];
 
   return (
@@ -252,7 +471,20 @@ const ReportsView = ({ assets }: { assets: Asset[] }) => {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Relatórios Analíticos</h2>
-          <p className="text-slate-500 text-sm">Depreciação e evolução de valor de patrimônio.</p>
+          <p className="text-slate-500 text-sm">Depreciação estimada e evolução de valor de patrimônio.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Valor Residual Total</p>
+          <h3 className="text-2xl font-bold text-slate-800">{formatCurrency(totalRemainingValue)}</h3>
+          <p className="text-xs text-slate-500 mt-2">Valor atual descontando depreciação (vida útil 5 anos)</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Acúmulo de Depreciação</p>
+          <h3 className="text-2xl font-bold text-red-600">-{formatCurrency(totalDepreciation)}</h3>
+          <p className="text-xs text-slate-500 mt-2">Perda de valor estimada desde a aquisição</p>
         </div>
       </div>
 
@@ -744,13 +976,15 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 };
 
 export default function App() {
-  const { assets, categories, audits, addCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
+  const { assets, categories, audits, addCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingAsset, setEditingAsset] = React.useState<Asset | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedStatus, setSelectedStatus] = React.useState<AssetStatus>('Ativo');
+  const [hasWarranty, setHasWarranty] = React.useState<boolean>(false);
+  const [hasPreventiveMaintenance, setHasPreventiveMaintenance] = React.useState<boolean>(false);
   const [initialListStatus, setInitialListStatus] = React.useState<string>('all');
 
   const navigateToFilteredList = (status: string) => {
@@ -768,24 +1002,53 @@ export default function App() {
   React.useEffect(() => {
     if (editingAsset) {
       setSelectedStatus(editingAsset.status);
+      setHasWarranty(editingAsset.hasWarranty || false);
+      setHasPreventiveMaintenance(editingAsset.hasPreventiveMaintenance || false);
     } else {
       setSelectedStatus('Ativo');
+      setHasWarranty(false);
+      setHasPreventiveMaintenance(false);
     }
   }, [editingAsset, isModalOpen]);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const status = formData.get('status') as AssetStatus;
+    const maintenanceCost = Number(formData.get('maintenanceCost') || 0);
+    const maintenanceNotes = formData.get('maintenanceNotes') as string || '';
+    const hasWarrantyValue = formData.get('hasWarranty') === 'on';
+    const hasPreventiveValue = formData.get('hasPreventiveMaintenance') === 'on';
+    
+    let maintenanceHistory = editingAsset?.maintenanceHistory || [];
+    if (status === 'Em Manutenção' && maintenanceCost > 0) {
+      maintenanceHistory = [
+        ...maintenanceHistory,
+        {
+          id: crypto.randomUUID(),
+          date: new Date().toISOString(),
+          cost: maintenanceCost,
+          notes: maintenanceNotes,
+        }
+      ];
+    }
+
     const data = {
       name: formData.get('name') as string,
       tag: formData.get('tag') as string,
       category: formData.get('category') as AssetCategory,
-      status: formData.get('status') as AssetStatus,
+      status,
       value: Number(formData.get('value')),
       purchaseDate: formData.get('purchaseDate') as string,
       location: formData.get('location') as string,
-      assignedTo: formData.get('assignedTo') as string,
-      maintenanceNotes: formData.get('maintenanceNotes') as string || '',
+      nextMaintenanceDate: formData.get('nextMaintenanceDate') as string || '',
+      maintenanceIntervalMonths: Number(formData.get('maintenanceIntervalMonths') || 0),
+      hasPreventiveMaintenance: hasPreventiveValue,
+      hasWarranty: hasWarrantyValue,
+      warrantyExpirationDate: formData.get('warrantyExpirationDate') as string || '',
+      maintenanceNotes,
+      inactiveReason: formData.get('inactiveReason') as string || '',
+      maintenanceHistory,
     };
 
     if (editingAsset) {
@@ -841,6 +1104,15 @@ export default function App() {
             <SidebarItem icon={ClipboardCheck} label="Controle" active={view === 'audit'} onClick={() => { setView('audit'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={PieChart} label="Relatórios" active={view === 'reports'} onClick={() => { setView('reports'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={Settings} label="Configurações" active={view === 'categories'} onClick={() => { setView('categories'); setIsSidebarOpen(false); }} />
+            <a 
+              href="https://mkt-solutions.com.br/placas-de-patrimonio/#cotacao" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <ExternalLink size={18} className="transition-transform duration-200 group-hover:scale-110" />
+              <span>Pedir novas placas</span>
+            </a>
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-800">
@@ -925,6 +1197,7 @@ export default function App() {
               initialStatusFilter={initialListStatus}
               onDelete={deleteAsset} 
               onEdit={handleEdit} 
+              onBulkUpload={bulkAddAssets}
             />
           )}
           {view === 'reports' && <ReportsView assets={assets} />}
@@ -974,8 +1247,100 @@ export default function App() {
               </select>
             </div>
             <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Data de Compra</label>
+              <input name="purchaseDate" type="date" defaultValue={editingAsset?.purchaseDate || new Date().toISOString().split('T')[0]} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col justify-end">
+              <label className="flex items-center gap-2 cursor-pointer mb-2 px-1">
+                <input 
+                  name="hasPreventiveMaintenance" 
+                  type="checkbox" 
+                  checked={hasPreventiveMaintenance}
+                  onChange={(e) => setHasPreventiveMaintenance(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
+                />
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">Manutenção Preventiva?</span>
+              </label>
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="flex items-center gap-2 cursor-pointer mb-2 px-1">
+                <input 
+                  name="hasWarranty" 
+                  type="checkbox" 
+                  checked={hasWarranty}
+                  onChange={(e) => setHasWarranty(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
+                />
+                <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">Possui Garantia?</span>
+              </label>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {hasPreventiveMaintenance && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Próxima Manutenção</label>
+                    <input 
+                      name="nextMaintenanceDate" 
+                      type="date" 
+                      defaultValue={editingAsset?.nextMaintenanceDate} 
+                      required={hasPreventiveMaintenance}
+                      className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Se repete em (meses)</label>
+                    <input 
+                      name="maintenanceIntervalMonths" 
+                      type="number" 
+                      min="1"
+                      placeholder="Ex: 6"
+                      defaultValue={editingAsset?.maintenanceIntervalMonths} 
+                      className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {hasWarranty && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Garantia expira em</label>
+                <input 
+                  name="warrantyExpirationDate" 
+                  type="date" 
+                  defaultValue={editingAsset?.warrantyExpirationDate} 
+                  required={hasWarranty}
+                  className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor (BRL)</label>
               <input name="value" type="number" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Localização</label>
+              <input name="location" defaultValue={editingAsset?.location} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
           </div>
           <AnimatePresence>
@@ -984,23 +1349,62 @@ export default function App() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor da Manutenção (BRL)</label>
+                    <input 
+                      name="maintenanceCost" 
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 bg-slate-50 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Empresa / Local</label>
+                    <input 
+                      name="maintenanceNotes" 
+                      defaultValue={editingAsset?.maintenanceNotes} 
+                      placeholder="Ex: Oficina Central"
+                      className="w-full px-3 py-2 bg-slate-50 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
+                    />
+                  </div>
+                </div>
+                {editingAsset?.maintenanceHistory && editingAsset.maintenanceHistory.length > 0 && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-2">Histórico Recente</p>
+                    <div className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                      {editingAsset.maintenanceHistory.map((h, i) => (
+                        <div key={i} className="flex justify-between text-[11px] text-slate-600 border-b border-white pb-1">
+                          <span>{formatDate(h.date)}</span>
+                          <span className="font-bold text-red-600">-{formatCurrency(h.cost)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+            {selectedStatus === 'Inativo' && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden"
               >
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Local / Empresa de Manutenção</label>
-                <input 
-                  name="maintenanceNotes" 
-                  defaultValue={editingAsset?.maintenanceNotes} 
-                  placeholder="Ex: Oficina Central, TechRepair Ltda..."
-                  required={selectedStatus === 'Em Manutenção'}
-                  className="w-full px-3 py-2 bg-slate-50 border border-amber-200 ring-2 ring-amber-50 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Motivo da Inativação</label>
+                <textarea 
+                  name="inactiveReason" 
+                  defaultValue={editingAsset?.inactiveReason} 
+                  required={selectedStatus === 'Inativo'}
+                  placeholder="Ex: Item avariado sem conserto, obsolescência técnica..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-red-200 ring-2 ring-red-50 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none min-h-[80px]" 
                 />
               </motion.div>
             )}
           </AnimatePresence>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Localização</label>
-            <input name="location" defaultValue={editingAsset?.location} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
           <button type="submit" className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold text-xs shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all mt-4 tracking-wide uppercase">
             {editingAsset ? "Atualizar Registro" : "Salvar Ativo"}
           </button>
