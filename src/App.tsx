@@ -43,7 +43,7 @@ const StatCard = ({ label, value, trend, trendColor, onClick }: { label: string,
 
 // --- Main Views ---
 
-const DashboardView = ({ stats, onMaintenanceClick }: { stats: any, onMaintenanceClick: () => void }) => {
+const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, onMaintenanceClick: () => void, onViewAll: () => void }) => {
   const COLORS = ['#3b82f6', '#818cf8', '#94a3b8', '#64748b', '#ef4444', '#1e293b'];
 
   return (
@@ -65,7 +65,10 @@ const DashboardView = ({ stats, onMaintenanceClick }: { stats: any, onMaintenanc
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[460px]">
           <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
             <h4 className="font-bold text-slate-800">Recém Cadastrados / Atualizados</h4>
-            <button className="text-blue-600 text-xs font-semibold hover:underline flex items-center gap-1">
+            <button 
+              onClick={onViewAll}
+              className="text-blue-600 text-xs font-semibold hover:underline flex items-center gap-1"
+            >
               Ver Todos <ArrowUpRight size={12} />
             </button>
           </div>
@@ -908,7 +911,13 @@ export default function App() {
 
         {/* Scrollable Region */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          {view === 'dashboard' && <DashboardView stats={stats} onMaintenanceClick={() => navigateToFilteredList('Em Manutenção')} />}
+          {view === 'dashboard' && (
+            <DashboardView 
+              stats={stats} 
+              onMaintenanceClick={() => navigateToFilteredList('Em Manutenção')} 
+              onViewAll={() => setView('list')}
+            />
+          )}
           {view === 'list' && (
             <AssetListView 
               assets={assets.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.tag.toLowerCase().includes(searchTerm.toLowerCase()))} 
