@@ -168,9 +168,6 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
                   <span className="font-semibold text-slate-800">{cat.value} un.</span>
                 </div>
               ))}
-              <div className="pt-4 border-t border-slate-100">
-                <button className="w-full py-2 bg-slate-50 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-100 transition-colors uppercase tracking-tight">Exportar Relatório PDF</button>
-              </div>
             </div>
           </div>
         </div>
