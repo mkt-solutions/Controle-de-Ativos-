@@ -1,216 +1,361 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Asset, AssetCategory, AssetStatus, AuditRecord, Category } from './types';
-
-const STORAGE_KEY = 'asset_master_data';
-const CATEGORIES_KEY = 'asset_master_categories';
-const AUDITS_KEY = 'asset_master_audits';
-
-const INITIAL_CATEGORIES: Category[] = [
-  { id: 'cat-1', name: 'Hardware', usefulLifeYears: 5 },
-  { id: 'cat-2', name: 'Software', usefulLifeYears: 5 },
-  { id: 'cat-3', name: 'Mobiliário', usefulLifeYears: 10 },
-  { id: 'cat-4', name: 'Veículos', usefulLifeYears: 10 },
-  { id: 'cat-5', name: 'Imóveis', usefulLifeYears: 20 },
-  { id: 'cat-6', name: 'Computadores', usefulLifeYears: 5 },
-];
-
-const INITIAL_DATA: Asset[] = [
-  {
-    id: '1',
-    name: 'MacBook Pro M2',
-    tag: 'TI-001',
-    category: 'Hardware',
-    status: 'Ativo',
-    purchaseDate: '2023-05-15',
-    value: 12500,
-    location: 'Sede - TI',
-    assignedTo: 'João Silva',
-    createdAt: '2023-05-15T10:00:00Z',
-    updatedAt: '2023-05-15T10:00:00Z',
-  },
-  {
-    id: '2',
-    name: 'Cadeira Ergonômica Pro',
-    tag: 'MOB-042',
-    category: 'Mobiliário',
-    status: 'Ativo',
-    purchaseDate: '2023-08-20',
-    value: 1800,
-    location: 'Sede - RH',
-    assignedTo: 'Maria Oliveira',
-    createdAt: '2023-08-20T14:30:00Z',
-    updatedAt: '2023-08-20T14:30:00Z',
-  },
-  {
-    id: '3',
-    name: 'Servidor Dell PowerEdge',
-    tag: 'INFRA-010',
-    category: 'Infraestrutura',
-    status: 'Em Manutenção',
-    purchaseDate: '2022-11-10',
-    value: 45000,
-    location: 'Data Center',
-    maintenanceNotes: 'Oficina Central Dell',
-    createdAt: '2022-11-10T09:00:00Z',
-    updatedAt: '2024-01-15T16:20:00Z',
-  },
-  {
-    id: '4',
-    name: 'Toyota Corolla Executivo',
-    tag: 'VEI-005',
-    category: 'Veículos',
-    status: 'Emprestado',
-    purchaseDate: '2021-03-05',
-    value: 140000,
-    location: 'Garagem Central',
-    assignedTo: 'Diretoria Especial',
-    createdAt: '2021-03-05T08:00:00Z',
-    updatedAt: '2023-12-01T11:00:00Z',
-  }
-];
-
-const generateId = () => {
-  try {
-    return crypto.randomUUID();
-  } catch {
-    return Date.now().toString(36) + Math.random().toString(36).substring(2);
-  }
-};
+import { Asset, AuditRecord, Category } from './types';
+import { supabase } from './lib/supabase';
 
 export function useAssets() {
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem(CATEGORIES_KEY);
-    if (!saved) return INITIAL_CATEGORIES;
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [audits, setAudits] = useState<AuditRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [empresaId, setEmpresaId] = useState<string | null>(null);
+
+  const fetchAll = async () => {
+    setLoading(true);
     try {
-      const parsed = JSON.parse(saved);
-      // Migration for legacy string categories
-      return parsed.map((cat: any, index: number) => {
-        if (typeof cat === 'string') {
-          return { id: `legacy-${index}-${Date.now()}`, name: cat, usefulLifeYears: 10 };
-        }
-        if (cat && typeof cat === 'object' && !cat.id) {
-          return { ...cat, id: `migrated-${index}-${Date.now()}`, usefulLifeYears: cat.usefulLifeYears || 10 };
-        }
-        return cat;
-      });
-    } catch {
-      return INITIAL_CATEGORIES;
-    }
-  });
-
-  const [assets, setAssets] = useState<Asset[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_DATA;
-  });
-
-  const [audits, setAudits] = useState<AuditRecord[]>(() => {
-    const saved = localStorage.getItem(AUDITS_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(assets));
-  }, [assets]);
-
-  useEffect(() => {
-    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem(AUDITS_KEY, JSON.stringify(audits));
-  }, [audits]);
-
-  const startAudit = (auditorName: string) => {
-    const newAudit: AuditRecord = {
-      id: crypto.randomUUID(),
-      date: new Date().toISOString(),
-      auditorName,
-      verifiedIds: [],
-      allAssetsSnapshot: assets.map(a => ({ 
-        id: a.id, 
-        name: a.name, 
-        tag: a.tag,
-        category: a.category,
-        value: a.value,
-        location: a.location
-      })),
-      isFinalized: false,
-    };
-    setAudits(prev => [newAudit, ...prev]);
-  };
-
-  const toggleAssetAudit = (auditId: string, assetId: string) => {
-    setAudits(prev => prev.map(audit => {
-      if (audit.id === auditId) {
-        const isVerified = audit.verifiedIds.includes(assetId);
-        return {
-          ...audit,
-          verifiedIds: isVerified 
-            ? audit.verifiedIds.filter(id => id !== assetId)
-            : [...audit.verifiedIds, assetId]
-        };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
       }
-      return audit;
-    }));
-  };
 
-  const finalizeAudit = (auditId: string) => {
-    setAudits(prev => prev.map(audit => 
-      audit.id === auditId ? { ...audit, isFinalized: true } : audit
-    ));
-  };
+      // 1. Get Empresa ID for the current user
+      const { data: userEmpresa, error: empresaError } = await supabase
+        .from('usuarios_empresa')
+        .select('empresa_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-  const deleteAudit = (id: string) => {
-    setAudits(prev => prev.filter(a => a.id !== id));
-  };
+      if (empresaError) {
+        console.error('Erro ao buscar empresa:', empresaError);
+      }
 
-  const addCategory = (name: string, usefulLifeYears: number = 10) => {
-    if (name && !categories.some(c => c.name === name)) {
-      setCategories(prev => [...prev, { id: generateId(), name, usefulLifeYears }]);
+      if (!userEmpresa) {
+        setEmpresaId(null);
+        setLoading(false);
+        return;
+      }
+
+      setEmpresaId(userEmpresa.empresa_id);
+
+      // 2. Fetch using empresa_id
+      const [catRes, assetRes, auditRes] = await Promise.all([
+        supabase.from('categories').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
+        supabase.from('assets').select('*, categories(name)').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
+        supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false })
+      ]);
+
+      if (catRes.data) setCategories(catRes.data);
+      if (assetRes.data) {
+        setAssets(assetRes.data.map((a: any) => ({
+          ...a,
+          category: a.categories?.name || 'Sem Categoria',
+          purchaseDate: a.purchase_date,
+          maintenanceNotes: a.maintenance_notes,
+          maintenanceHistory: a.maintenance_history,
+          inactiveReason: a.inactive_reason,
+          nextMaintenanceDate: a.next_maintenance_date,
+          maintenanceIntervalMonths: a.maintenance_interval_months,
+          hasPreventiveMaintenance: a.has_preventive_maintenance,
+          hasWarranty: a.has_warranty,
+          warrantyExpirationDate: a.warranty_expiration_date,
+          createdAt: a.created_at,
+          updatedAt: a.updated_at
+        })));
+      }
+      if (auditRes.data) {
+        setAudits(auditRes.data.map((audit: any) => ({
+          ...audit,
+          auditorName: audit.auditor_name,
+          verifiedIds: audit.verified_ids,
+          allAssetsSnapshot: audit.all_assets_snapshot,
+          isFinalized: audit.is_finalized
+        })));
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateCategory = (id: string, updates: Partial<Category>) => {
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  const addCategory = async (name: string, usefulLifeYears: number = 10) => {
+    if (name && empresaId && !categories.some(c => c.name === name)) {
+      const { data, error } = await supabase
+        .from('categories')
+        .insert([{ name, useful_life_years: usefulLifeYears, empresa_id: empresaId }])
+        .select()
+        .single();
+      
+      if (data) setCategories(prev => [...prev, data]);
+      if (error) console.error('Error adding category:', error);
+    }
   };
 
-  const removeCategory = (id: string) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
+    const { error } = await supabase
+      .from('categories')
+      .update({
+        name: updates.name,
+        useful_life_years: updates.usefulLifeYears
+      })
+      .eq('id', id);
+
+    if (!error) {
+      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    }
   };
 
-  const addAsset = (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newAsset: Asset = {
-      ...asset,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  const removeCategory = async (id: string) => {
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (!error) {
+      setCategories(prev => prev.filter(c => c.id !== id));
+    }
+  };
+
+  const addAsset = async (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'empresa_id'>) => {
+    if (!empresaId) return;
+
+    let category_id = asset.category_id;
+    if (!category_id) {
+      const cat = categories.find(c => c.name === asset.category);
+      if (cat) category_id = cat.id;
+    }
+
+    const newAssetData = {
+      name: asset.name,
+      tag: asset.tag,
+      category_id: category_id,
+      status: asset.status,
+      purchase_date: asset.purchaseDate,
+      value: asset.value,
+      location: asset.location,
+      assigned_to: asset.assignedTo,
+      assigned_to_user_id: asset.assigned_to_user_id,
+      maintenance_notes: asset.maintenanceNotes,
+      maintenance_history: asset.maintenanceHistory,
+      inactive_reason: asset.inactiveReason,
+      next_maintenance_date: asset.nextMaintenanceDate,
+      maintenance_interval_months: asset.maintenanceIntervalMonths,
+      has_preventive_maintenance: asset.hasPreventiveMaintenance,
+      has_warranty: asset.hasWarranty,
+      warranty_expiration_date: asset.warrantyExpirationDate,
+      description: asset.description,
+      empresa_id: empresaId
     };
-    setAssets(prev => [newAsset, ...prev]);
+
+    const { data, error } = await supabase
+      .from('assets')
+      .insert([newAssetData])
+      .select('*, categories(name)')
+      .single();
+
+    if (data) {
+      const mapped = {
+        ...data,
+        category: data.categories?.name || 'Sem Categoria',
+        purchaseDate: data.purchase_date,
+        maintenanceNotes: data.maintenance_notes,
+        maintenanceHistory: data.maintenance_history,
+        inactiveReason: data.inactive_reason,
+        nextMaintenanceDate: data.next_maintenance_date,
+        maintenanceIntervalMonths: data.maintenance_interval_months,
+        hasPreventiveMaintenance: data.has_preventive_maintenance,
+        hasWarranty: data.has_warranty,
+        warranty_expiration_date: data.warranty_expiration_date,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at
+      };
+      setAssets(prev => [mapped, ...prev]);
+    }
+    if (error) console.error('Error adding asset:', error);
   };
 
-  const updateAsset = (id: string, updates: Partial<Asset>) => {
-    setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+  const updateAsset = async (id: string, updates: Partial<Asset>) => {
+    const updateData: any = {};
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.tag !== undefined) updateData.tag = updates.tag;
+    if (updates.category_id !== undefined) updateData.category_id = updates.category_id;
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.purchaseDate !== undefined) updateData.purchase_date = updates.purchaseDate;
+    if (updates.value !== undefined) updateData.value = updates.value;
+    if (updates.location !== undefined) updateData.location = updates.location;
+    if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
+    if (updates.assigned_to_user_id !== undefined) updateData.assigned_to_user_id = updates.assigned_to_user_id;
+    if (updates.maintenanceNotes !== undefined) updateData.maintenance_notes = updates.maintenanceNotes;
+    if (updates.maintenanceHistory !== undefined) updateData.maintenance_history = updates.maintenanceHistory;
+    if (updates.inactiveReason !== undefined) updateData.inactive_reason = updates.inactiveReason;
+    if (updates.nextMaintenanceDate !== undefined) updateData.next_maintenance_date = updates.nextMaintenanceDate;
+    if (updates.maintenanceIntervalMonths !== undefined) updateData.maintenance_interval_months = updates.maintenanceIntervalMonths;
+    if (updates.hasPreventiveMaintenance !== undefined) updateData.has_preventive_maintenance = updates.hasPreventiveMaintenance;
+    if (updates.hasWarranty !== undefined) updateData.has_warranty = updates.hasWarranty;
+    if (updates.warrantyExpirationDate !== undefined) updateData.warranty_expiration_date = updates.warrantyExpirationDate;
+    if (updates.description !== undefined) updateData.description = updates.description;
+
+    const { error } = await supabase
+      .from('assets')
+      .update({ ...updateData, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (!error) {
+      setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+    }
   };
 
-  const deleteAsset = (id: string) => {
-    setAssets(prev => prev.filter(a => a.id !== id));
+  const deleteAsset = async (id: string) => {
+    const { error } = await supabase.from('assets').delete().eq('id', id);
+    if (!error) {
+      setAssets(prev => prev.filter(a => a.id !== id));
+    }
   };
 
-  const bulkAddAssets = (newAssets: Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>[]) => {
-    const prepared = newAssets.map(asset => ({
-      ...asset,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  const bulkAddAssets = async (newAssets: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'empresa_id'>[]) => {
+    if (!empresaId) return;
+
+    const prepared = newAssets.map(asset => {
+      let category_id = asset.category_id;
+      if (!category_id) {
+        const cat = categories.find(c => c.name === asset.category);
+        if (cat) category_id = cat.id;
+      }
+
+      return {
+        name: asset.name,
+        tag: asset.tag,
+        category_id: category_id,
+        status: asset.status,
+        purchase_date: asset.purchaseDate,
+        value: asset.value,
+        location: asset.location,
+        assigned_to: asset.assignedTo,
+        maintenance_notes: asset.maintenanceNotes,
+        maintenance_history: asset.maintenanceHistory,
+        inactive_reason: asset.inactiveReason,
+        next_maintenance_date: asset.nextMaintenanceDate,
+        maintenance_interval_months: asset.maintenanceIntervalMonths,
+        has_preventive_maintenance: asset.hasPreventiveMaintenance,
+        has_warranty: asset.hasWarranty,
+        warranty_expiration_date: asset.warrantyExpirationDate,
+        description: asset.description,
+        empresa_id: empresaId
+      };
+    });
+
+    const { data, error } = await supabase
+      .from('assets')
+      .insert(prepared)
+      .select('*, categories(name)');
+
+    if (data) {
+      const mapped = data.map(d => ({
+        ...d,
+        category: d.categories?.name || 'Sem Categoria',
+        purchaseDate: d.purchase_date,
+        maintenanceNotes: d.maintenance_notes,
+        maintenanceHistory: d.maintenance_history,
+        inactiveReason: d.inactive_reason,
+        nextMaintenanceDate: d.next_maintenance_date,
+        maintenanceIntervalMonths: d.maintenance_interval_months,
+        hasPreventiveMaintenance: d.has_preventive_maintenance,
+        hasWarranty: d.has_warranty,
+        warranty_expiration_date: d.warranty_expiration_date,
+        createdAt: d.created_at,
+        updatedAt: d.updated_at
+      }));
+      setAssets(prev => [...mapped, ...prev]);
+    }
+  };
+
+  const startAudit = async (auditorName: string) => {
+    if (!empresaId) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const allAssetsSnapshot = assets.map(a => ({ 
+      id: a.id, 
+      name: a.name, 
+      tag: a.tag,
+      category: a.category,
+      value: a.value,
+      location: a.location
     }));
-    setAssets(prev => [...prepared, ...prev]);
+
+    const newAuditData = {
+      date: new Date().toISOString(),
+      auditor_name: auditorName,
+      auditor_user_id: user?.id,
+      verified_ids: [],
+      all_assets_snapshot: allAssetsSnapshot,
+      is_finalized: false,
+      empresa_id: empresaId
+    };
+
+    const { data, error } = await supabase
+      .from('audits')
+      .insert([newAuditData])
+      .select()
+      .single();
+
+    if (data) {
+      const mapped = {
+        ...data,
+        auditorName: data.auditor_name,
+        verifiedIds: data.verified_ids,
+        allAssetsSnapshot: data.all_assets_snapshot,
+        isFinalized: data.is_finalized
+      };
+      setAudits(prev => [mapped, ...prev]);
+    }
+  };
+
+  const toggleAssetAudit = async (auditId: string, assetId: string) => {
+    const audit = audits.find(a => a.id === auditId);
+    if (!audit) return;
+
+    const isVerified = audit.verifiedIds.includes(assetId);
+    const newVerifiedIds = isVerified 
+      ? audit.verifiedIds.filter(id => id !== assetId)
+      : [...audit.verifiedIds, assetId];
+
+    const { error } = await supabase
+      .from('audits')
+      .update({ verified_ids: newVerifiedIds })
+      .eq('id', auditId);
+
+    if (!error) {
+      setAudits(prev => prev.map(a => a.id === auditId ? { ...a, verifiedIds: newVerifiedIds } : a));
+    }
+  };
+
+  const finalizeAudit = async (auditId: string) => {
+    const { error } = await supabase
+      .from('audits')
+      .update({ is_finalized: true })
+      .eq('id', auditId);
+
+    if (!error) {
+      setAudits(prev => prev.map(audit => 
+        audit.id === auditId ? { ...audit, isFinalized: true } : audit
+      ));
+    }
+  };
+
+  const deleteAudit = async (id: string) => {
+    const { error } = await supabase.from('audits').delete().eq('id', id);
+    if (!error) {
+      setAudits(prev => prev.filter(a => a.id !== id));
+    }
   };
 
   const stats = useMemo(() => {
     const totalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
     
     const byCategory = assets.reduce((acc, curr) => {
-      acc[curr.category] = (acc[curr.category] || 0) + 1;
+      const catName = curr.category || 'Sem Categoria';
+      acc[catName] = (acc[catName] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
@@ -221,7 +366,7 @@ export function useAssets() {
 
     const totalMaintenanceCost = assets.reduce((acc, asset) => {
       const history = asset.maintenanceHistory || [];
-      return acc + history.reduce((hAcc, hCurr) => hAcc + hCurr.cost, 0);
+      return acc + history.reduce((hAcc, hCurr: any) => hAcc + (hCurr.cost || 0), 0);
     }, 0);
 
     const alerts = assets.reduce((acc, asset) => {
@@ -240,7 +385,6 @@ export function useAssets() {
         let nextDate = new Date(asset.nextMaintenanceDate);
         
         if (asset.hasPreventiveMaintenance && asset.maintenanceIntervalMonths && asset.maintenanceIntervalMonths > 0) {
-          // If the date is in the past, calculate the next occurrence
           while (nextDate < today) {
             nextDate.setMonth(nextDate.getMonth() + asset.maintenanceIntervalMonths);
           }
@@ -285,6 +429,7 @@ export function useAssets() {
     assets, 
     categories, 
     audits,
+    loading,
     addCategory, 
     updateCategory,
     removeCategory, 

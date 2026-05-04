@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2 } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -7,7 +7,8 @@ import { saveAs } from 'file-saver';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
-import { Asset, AssetCategory, AssetStatus, AuditRecord, Category } from './types';
+import { Asset, AssetStatus, AssetCategory, Category, AuditRecord } from './types';
+import { supabase } from './lib/supabase';
 import { cn, formatCurrency, formatDate } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
@@ -43,6 +44,182 @@ const StatCard = ({ label, value, trend, trendColor, onClick }: { label: string,
     )}
   </div>
 );
+
+// --- Components ---
+
+const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => {
+  const [isRegister, setIsRegister] = React.useState(true);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [companyName, setCompanyName] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      if (isRegister) {
+        // 1. Sign up user
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              company_name: companyName,
+            }
+          }
+        });
+        
+        if (authError) throw authError;
+        if (!authData.user) throw new Error('Falha ao criar usuário');
+
+        // 2. Create Empresa (Multi-tenant)
+        // If registration used an existing empresa_id (invite flow), this would be different.
+        // For self-signup, we create a new company.
+        const empresaId = authData.user.id; // Using user ID as initial company ID is a common pattern for simplicity, or generate new
+        
+        const { error: empresaError } = await supabase
+          .from('empresas')
+          .insert([{ id: empresaId, nome: companyName }]);
+        
+        if (empresaError) throw empresaError;
+
+        // 3. Create relationship
+        const { error: relError } = await supabase
+          .from('usuarios_empresa')
+          .insert([{ 
+            user_id: authData.user.id, 
+            empresa_id: empresaId, 
+            role: 'admin' 
+          }]);
+        
+        if (relError) throw relError;
+
+        onAuthSuccess(authData.user);
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        if (data.user) onAuthSuccess(data.user);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Erro ao processar autenticação');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"
+      >
+        <div className="p-8">
+          <div className="flex justify-center mb-8">
+            <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+              <Box className="text-white" size={32} />
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold text-center text-slate-900 mb-2">
+            {isRegister ? 'Criar Nova Conta' : 'Acessar Sistema'}
+          </h2>
+          <p className="text-center text-slate-500 text-sm mb-8">
+            {isRegister 
+              ? 'Registre sua empresa para começar o controle.' 
+              : 'Entre com suas credenciais para continuar.'}
+          </p>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isRegister && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                  <Building2 size={12} /> Nome da Empresa
+                </label>
+                <input
+                  required
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Ex: Tech Solutions Ltda"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                <Mail size={12} /> E-mail
+              </label>
+              <input
+                required
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                <Lock size={12} /> Senha
+              </label>
+              <input
+                required
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+              />
+            </div>
+
+            <button
+              disabled={isLoading}
+              className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 uppercase tracking-wide disabled:opacity-50 mt-6"
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  {isRegister ? 'Cadastrar Empresa' : 'Entrar no Sistema'}
+                  <ArrowUpRight size={18} />
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+            <p className="text-sm text-slate-500">
+              {isRegister ? 'Já possui uma conta?' : 'Ainda não tem acesso?'}
+              <button
+                onClick={() => setIsRegister(!isRegister)}
+                className="ml-2 text-blue-600 font-bold hover:underline"
+              >
+                {isRegister ? 'Fazer Log-in' : 'Criar Registro'}
+              </button>
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
 // --- Main Views ---
 
@@ -1560,8 +1737,52 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 };
 
 export default function App() {
-  const { assets, categories, audits, addCategory, updateCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
+  const { assets, categories, audits, loading, addCategory, updateCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
+  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
+  const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
+  
+  // Check auth on load
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setCurrentUser({
+          ...session.user,
+          companyName: session.user.user_metadata?.company_name
+        });
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setCurrentUser({
+          ...session.user,
+          companyName: session.user.user_metadata?.company_name
+        });
+        setIsAuthenticated(true);
+      } else {
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const handleAuthSuccess = (user: any) => {
+    setCurrentUser({
+      ...user,
+      companyName: user.user_metadata?.company_name
+    });
+    setIsAuthenticated(true);
+  };
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [editingAsset, setEditingAsset] = React.useState<Asset | null>(null);
@@ -1644,6 +1865,23 @@ export default function App() {
     setEditingAsset(null);
   };
 
+  if (isAuthenticated === null) return null; // Loading state
+
+  if (!isAuthenticated) {
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
+          <p className="text-slate-500 font-medium animate-pulse">Carregando dados...</p>
+        </div>
+      </div>
+    );
+  }
+
   const handleEdit = (asset: Asset) => {
     setEditingAsset(asset);
     setIsModalOpen(true);
@@ -1700,12 +1938,23 @@ export default function App() {
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold text-xs">A</div>
-            <div className="text-xs text-slate-400">
-              <p className="text-white font-medium">Admin Empresa</p>
-              <p>Plano Enterprise</p>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">
+                {currentUser?.companyName?.charAt(0) || 'U'}
+              </div>
+              <div className="text-xs text-slate-400 min-w-0">
+                <p className="text-white font-medium truncate">{currentUser?.companyName || 'Empresa'}</p>
+                <p className="truncate">{currentUser?.email}</p>
+              </div>
             </div>
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm font-medium"
+            >
+              <LogOut size={18} />
+              Sair da conta
+            </button>
           </div>
         </div>
       </aside>

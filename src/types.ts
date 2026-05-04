@@ -11,6 +11,7 @@ export interface Category {
   id: string;
   name: string;
   usefulLifeYears: number;
+  empresa_id: string;
 }
 
 export interface MaintenanceSession {
@@ -24,12 +25,14 @@ export interface Asset {
   id: string;
   name: string;
   tag: string; // Patrimônio ID
-  category: AssetCategory;
+  category: string; // Keep as string for UI but it will be linked to category_id
+  category_id?: string;
   status: AssetStatus;
   purchaseDate: string;
   value: number;
   location: string;
   assignedTo?: string;
+  assigned_to_user_id?: string;
   maintenanceNotes?: string;
   maintenanceHistory?: MaintenanceSession[];
   inactiveReason?: string;
@@ -39,6 +42,7 @@ export interface Asset {
   hasWarranty?: boolean;
   warrantyExpirationDate?: string;
   description?: string;
+  empresa_id: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,9 +51,11 @@ export interface AuditRecord {
   id: string;
   date: string;
   auditorName: string;
+  auditor_user_id?: string;
   verifiedIds: string[];
   allAssetsSnapshot: { id: string, name: string, tag: string, category: string, value: number, location: string }[];
   isFinalized: boolean;
+  empresa_id: string;
 }
 
 export interface AssetStats {
