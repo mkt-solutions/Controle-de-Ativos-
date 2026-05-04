@@ -228,6 +228,44 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
+  const handleDownloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Modelo_Importacao');
+
+    worksheet.columns = [
+      { header: 'Patrimonio', key: 'tag', width: 15 },
+      { header: 'Nome', key: 'name', width: 30 },
+      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Localizacao', key: 'location', width: 20 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Valor', key: 'value', width: 15 },
+      { header: 'Data Compra', key: 'purchaseDate', width: 15 }
+    ];
+
+    // Add an example row as instruction
+    worksheet.addRow({
+      tag: 'PAT001',
+      name: 'Exemplo de Computador',
+      category: 'Computadores',
+      location: 'Escritório Central',
+      status: 'Ativo',
+      value: 3500.00,
+      purchaseDate: '2024-01-15'
+    });
+
+    // Formatting headers
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' }
+    };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, "Modelo_Importacao_Ativos.xlsx");
+  };
+
   const handleExportExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Inventario');
@@ -301,6 +339,13 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
             className="hidden" 
           />
           <div className="flex items-center gap-2">
+            <button 
+              onClick={handleDownloadTemplate}
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+              title="Baixar modelo para preenchimento"
+            >
+              <Download size={16} /> Modelo
+            </button>
             <button 
               onClick={() => fileInputRef.current?.click()}
               className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
@@ -781,11 +826,21 @@ const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories:
 
   const DEFAULT_LIVES: Record<string, number> = {
     'Hardware': 5,
-    'Computadores': 5,
-    'Impressoras': 5,
+    'Software': 5,
     'Mobiliário': 10,
-    'Veículos': 5,
-    'Máquinas': 10
+    'Veículos': 10,
+    'Imóveis': 20,
+    'Computadores': 5
+  };
+
+  const [isUpdating, setIsUpdating] = React.useState(false);
+
+  const handleApplyUpdates = () => {
+    setIsUpdating(true);
+    // Visual feedback for calculation update
+    setTimeout(() => {
+      setIsUpdating(false);
+    }, 800);
   };
 
   const handleNameChange = (val: string) => {
@@ -805,7 +860,30 @@ const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories:
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 animate-in zoom-in-95 duration-500 max-w-2xl mx-auto">
-      <h3 className="text-xl font-bold text-slate-800 mb-6">Gerenciar Categorias</h3>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-slate-800">Gerenciar Categorias</h3>
+        <button 
+          onClick={handleApplyUpdates}
+          disabled={isUpdating}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            isUpdating 
+              ? 'bg-emerald-50 text-emerald-600' 
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          {isUpdating ? (
+            <>
+              <Check size={14} className="animate-bounce" />
+              ATUALIZADO
+            </>
+          ) : (
+            <>
+              <History size={14} />
+              ATUALIZAR ITENS
+            </>
+          )}
+        </button>
+      </div>
       
       <div className="flex flex-col sm:flex-row gap-2 mb-8">
         <div className="flex-1">

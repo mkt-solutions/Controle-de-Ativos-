@@ -7,11 +7,11 @@ const AUDITS_KEY = 'asset_master_audits';
 
 const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Hardware', usefulLifeYears: 5 },
-  { id: 'cat-2', name: 'Computadores', usefulLifeYears: 5 },
-  { id: 'cat-3', name: 'Impressoras', usefulLifeYears: 5 },
-  { id: 'cat-4', name: 'Mobiliário', usefulLifeYears: 10 },
-  { id: 'cat-5', name: 'Veículos', usefulLifeYears: 5 },
-  { id: 'cat-6', name: 'Máquinas', usefulLifeYears: 10 },
+  { id: 'cat-2', name: 'Software', usefulLifeYears: 5 },
+  { id: 'cat-3', name: 'Mobiliário', usefulLifeYears: 10 },
+  { id: 'cat-4', name: 'Veículos', usefulLifeYears: 10 },
+  { id: 'cat-5', name: 'Imóveis', usefulLifeYears: 20 },
+  { id: 'cat-6', name: 'Computadores', usefulLifeYears: 5 },
 ];
 
 const INITIAL_DATA: Asset[] = [
