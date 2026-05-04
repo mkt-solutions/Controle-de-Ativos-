@@ -48,7 +48,7 @@ export interface AuditRecord {
   date: string;
   auditorName: string;
   verifiedIds: string[];
-  allAssetsSnapshot: { id: string, name: string, tag: string, category: string, value: number }[];
+  allAssetsSnapshot: { id: string, name: string, tag: string, category: string, value: number, location: string }[];
   isFinalized: boolean;
 }
 

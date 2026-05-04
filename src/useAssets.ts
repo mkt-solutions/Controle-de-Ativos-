@@ -131,7 +131,8 @@ export function useAssets() {
         name: a.name, 
         tag: a.tag,
         category: a.category,
-        value: a.value
+        value: a.value,
+        location: a.location
       })),
       isFinalized: false,
     };

@@ -614,15 +614,223 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     { name: 'Não Encontrados', value: latestAudit.allAssetsSnapshot.length - latestAudit.verifiedIds.length }
   ] : [];
 
+  const exportAccountingReport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const dateStr = new Date().toLocaleDateString('pt-BR').split('/').join('-');
+    const filename = `relatorio_patrimonial_${dateStr}.xlsx`;
+    
+    // Helper to calculate data for export
+    const assetsWithMeta = assets.map(a => ({
+      ...a,
+      ...calculateDepreciation(a.value, a.purchaseDate, a.category)
+    }));
+
+    // 1. Aba: Resumo
+    const wsResumo = workbook.addWorksheet('Resumo');
+    wsResumo.columns = [
+      { header: 'Descrição', key: 'desc', width: 30 },
+      { header: 'Valor / Quantidade', key: 'val', width: 25 }
+    ];
+
+    const statsResumo = {
+      totalAssets: assets.length,
+      totalOriginal: assets.reduce((sum, a) => sum + a.value, 0),
+      totalDepreciation: assetsWithMeta.reduce((sum, a) => sum + a.depreciation, 0),
+      totalCurrent: assetsWithMeta.reduce((sum, a) => sum + a.remaining, 0)
+    };
+
+    wsResumo.addRows([
+      { desc: 'RELATÓRIO PATRIMONIAL CONSOLIDADO', val: '' },
+      { desc: 'Data de Emissão', val: new Date().toLocaleDateString('pt-BR') },
+      { desc: '', val: '' },
+      { desc: 'TOTAIS GERAIS', val: '' },
+      { desc: 'Total de Ativos', val: statsResumo.totalAssets },
+      { desc: 'Valor Total Original', val: statsResumo.totalOriginal },
+      { desc: 'Depreciação Acumulada Total', val: statsResumo.totalDepreciation },
+      { desc: 'Valor Atual Total', val: statsResumo.totalCurrent },
+      { desc: '', val: '' },
+      { desc: 'ATIVOS POR STATUS', val: '' }
+    ]);
+
+    statusData.forEach(s => {
+      wsResumo.addRow({ desc: s.name, val: s.value });
+    });
+
+    wsResumo.addRow({ desc: '', val: '' });
+    wsResumo.addRow({ desc: 'ATIVOS POR CATEGORIA', val: '' });
+    categoryData.forEach(c => {
+      wsResumo.addRow({ desc: c.name, val: c.value });
+    });
+
+    // Styling Resumo
+    wsResumo.getRow(1).font = { bold: true, size: 14 };
+    [4, 10, 16].forEach(rowIdx => wsResumo.getRow(rowIdx).font = { bold: true });
+    
+    wsResumo.getColumn(2).numFmt = '"R$ "#,##0.00';
+    // Fix non-currency numbers in Column 2
+    [2, 5].forEach(rowIdx => wsResumo.getCell(`B${rowIdx}`).numFmt = '0');
+
+    // 2. Aba: Ativos
+    const wsAtivos = workbook.addWorksheet('Ativos');
+    wsAtivos.columns = [
+      { header: 'ID do Ativo', key: 'id', width: 10 },
+      { header: 'Nome do Ativo', key: 'name', width: 30 },
+      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Número Patrimônio', key: 'tag', width: 15 },
+      { header: 'Localização', key: 'location', width: 20 },
+      { header: 'Responsável', key: 'auditor', width: 20 },
+      { header: 'Data Compra', key: 'purchaseDate', width: 15 },
+      { header: 'Valor Original', key: 'value', width: 15 },
+      { header: 'Vida Útil (Anos)', key: 'usefulLife', width: 15 },
+      { header: 'Valor Residual', key: 'remaining', width: 15 },
+      { header: 'Depreciação Acum.', key: 'depreciation', width: 15 },
+      { header: 'Valor Atual', key: 'current', width: 15 },
+      { header: 'Status', key: 'status', width: 15 }
+    ];
+
+    assetsWithMeta.forEach(a => {
+      const cat = categories.find(c => c.name === a.category);
+      wsAtivos.addRow({
+        id: a.id.slice(-6),
+        name: a.name,
+        category: a.category,
+        tag: a.tag,
+        location: a.location,
+        auditor: '-',
+        purchaseDate: new Date(a.purchaseDate),
+        value: a.value,
+        usefulLife: cat?.usefulLifeYears || 0,
+        remaining: a.remaining,
+        depreciation: a.depreciation,
+        current: a.remaining,
+        status: a.status
+      });
+    });
+
+    // 3. Aba: Depreciação
+    const wsDepr = workbook.addWorksheet('Depreciação');
+    wsDepr.columns = [
+      { header: 'Nome do Ativo', key: 'name', width: 30 },
+      { header: 'Valor Original', key: 'value', width: 15 },
+      { header: 'Valor Residual', key: 'residual', width: 15 },
+      { header: 'Vida Útil (Anos)', key: 'usefulLife', width: 15 },
+      { header: 'Meses Decorridos', key: 'months', width: 15 },
+      { header: 'Depreciação Mensal', key: 'monthly', width: 15 },
+      { header: 'Depreciação Acumulada', key: 'accumulated', width: 20 },
+      { header: 'Valor Atual', key: 'current', width: 15 }
+    ];
+
+    assetsWithMeta.forEach(a => {
+      const cat = categories.find(c => c.name === a.category);
+      const usefulLifeMonths = (cat?.usefulLifeYears || 5) * 12;
+      const purchase = new Date(a.purchaseDate);
+      const now = new Date();
+      const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
+      const monthlyRate = a.value / usefulLifeMonths;
+
+      wsDepr.addRow({
+        name: a.name,
+        value: a.value,
+        residual: 0,
+        usefulLife: cat?.usefulLifeYears || 0,
+        months: Math.max(0, monthsElapsed),
+        monthly: monthlyRate,
+        accumulated: a.depreciation,
+        current: a.remaining
+      });
+    });
+
+    // 4. Aba: Inventário
+    const wsInv = workbook.addWorksheet('Inventário');
+    wsInv.columns = [
+      { header: 'Nome do Ativo', key: 'name', width: 30 },
+      { header: 'Localização Esperada', key: 'locExp', width: 25 },
+      { header: 'Localização Atual', key: 'locActual', width: 25 },
+      { header: 'Status Conferência', key: 'status', width: 20 },
+      { header: 'Data Última Verificação', key: 'date', width: 20 }
+    ];
+
+    if (latestAudit) {
+      latestAudit.allAssetsSnapshot.forEach(item => {
+        const found = latestAudit.verifiedIds.includes(item.id);
+        wsInv.addRow({
+          name: item.name,
+          locExp: item.location,
+          locActual: found ? item.location : 'NÃO LOCALIZADO',
+          status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
+          date: new Date(latestAudit.date)
+        });
+      });
+    }
+
+    // Comum a todas as abas técnicas
+    [wsAtivos, wsDepr, wsInv].forEach(ws => {
+      // Freeze header
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+      
+      // Filter columns
+      ws.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: ws.columns.length }
+      };
+
+      // Header style
+      ws.getRow(1).font = { bold: true };
+      ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+
+      // Formatting currency columns
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        row.eachCell((cell, colNumber) => {
+          const header = ws.getColumn(colNumber).header as string;
+          if (header?.includes('Valor') || header?.includes('Depreciação') || header?.includes('Original') || header?.includes('Atual') || header?.includes('Mensal')) {
+            cell.numFmt = '"R$ "#,##0.00';
+          }
+          if (header?.includes('Data')) {
+            cell.numFmt = 'dd/mm/yyyy';
+          }
+        });
+      });
+    });
+
+    // Adicionando fórmulas de soma nas abas Ativos e Depreciação
+    const addSumRow = (ws: ExcelJS.Worksheet) => {
+      const lastRowNumber = ws.rowCount;
+      const sumRow = ws.addRow({});
+      ws.columns.forEach((col, colIdx) => {
+        if (col.header?.includes('Valor') || col.header?.includes('Depreciação') || col.header?.includes('Original') || col.header?.includes('Atual')) {
+          const colLetter = String.fromCharCode(65 + colIdx);
+          sumRow.getCell(colIdx + 1).value = { formula: `SUM(${colLetter}2:${colLetter}${lastRowNumber})` };
+          sumRow.getCell(colIdx + 1).numFmt = '"R$ "#,##0.00';
+          sumRow.getCell(colIdx + 1).font = { bold: true };
+        }
+      });
+    };
+    
+    addSumRow(wsAtivos);
+    addSumRow(wsDepr);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    saveAs(blob, filename);
+  };
+
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1', '#ec4899', '#14b8a6'];
 
   return (
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-500 pb-12">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Relatórios Analíticos</h2>
           <p className="text-slate-500 text-sm">Visão geral detalhada do patrimônio e saúde operacional.</p>
         </div>
+        <button
+          onClick={exportAccountingReport}
+          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 uppercase tracking-wider"
+        >
+          <Download size={18} />
+          Exportar Contabilidade
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -883,6 +1091,13 @@ const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories:
             </>
           )}
         </button>
+      </div>
+
+      <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-lg flex gap-3">
+        <Info size={18} className="text-blue-500 shrink-0 mt-0.5" />
+        <p className="text-xs text-blue-700 leading-relaxed font-medium">
+          Verifique sempre junto ao seu contador a vida útil que está sendo usada na sua empresa. Atualize os valores sempre que necessário.
+        </p>
       </div>
       
       <div className="flex flex-col sm:flex-row gap-2 mb-8">
@@ -1153,6 +1368,13 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
                   className="px-3 py-2 bg-emerald-600 text-white text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-all flex items-center gap-2"
                 >
                    <Check size={14} /> <span className="hidden xs:inline">FINALIZAR SESSÃO</span><span className="xs:hidden">FINALIZAR</span>
+                </button>
+                <button 
+                  onClick={() => deleteAudit(activeAudit.id)}
+                  className="px-3 py-2 bg-white border border-red-200 text-red-600 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-red-50 transition-all flex items-center gap-2"
+                  title="Desistir da leitura e apagar sessão atual"
+                >
+                   <Trash2 size={14} /> <span className="hidden xs:inline">VOLTAR / CANCELAR</span><span className="xs:hidden">VOLTAR</span>
                 </button>
               </div>
             </div>
