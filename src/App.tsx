@@ -682,15 +682,27 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
 };
 
 const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categorias: Categoria[], audits: AuditRecord[] }) => {
-  const calculateDepreciation = (originalValue: number, purchaseDate: string, nomeCategoria: string) => {
+  const calculateDepreciation = (asset: Asset) => {
+    const originalValue = asset.value;
+    const purchaseDate = asset.purchaseDate;
+    const nomeCategoria = asset.categoria;
+
     const purchase = new Date(purchaseDate);
     const now = new Date();
     const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
     
-    const categoria = categorias.find(c => c.name === nomeCategoria);
-    const usefulLifeYears = categoria ? categoria.usefulLifeYears : 5;
-    const usefulLifeMonths = usefulLifeYears * 12;
+    // Normalização para busca resiliente
+    const catSearch = (nomeCategoria || "").toString().trim().toLowerCase();
     
+    // Procura a categoria no estado atual
+    const categoriaDefinida = categorias.find(c => 
+      c.name.trim().toLowerCase() === catSearch || 
+      c.id === (asset as any).categoria_id
+    );
+    
+    const usefulLifeYears = categoriaDefinida ? Number(categoriaDefinida.usefulLifeYears) : 10;
+    
+    const usefulLifeMonths = Math.max(usefulLifeYears * 12, 1);
     const monthlyDepreciation = originalValue / usefulLifeMonths;
     const currentDepreciation = Math.min(originalValue, monthlyDepreciation * Math.max(0, monthsElapsed));
     const remainingValue = originalValue - currentDepreciation;
@@ -704,7 +716,7 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
 
   const assetsWithMeta = assets.map(a => ({
     ...a,
-    ...calculateDepreciation(a.value, a.purchaseDate, a.categoria)
+    ...calculateDepreciation(a)
   }));
 
   const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
@@ -777,7 +789,7 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
     // Helper to calculate data for export
     const assetsWithMeta = assets.map(a => ({
       ...a,
-      ...calculateDepreciation(a.value, a.purchaseDate, a.categoria)
+      ...calculateDepreciation(a)
     }));
 
     // 1. Aba: Resumo
@@ -1183,7 +1195,57 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 
 // --- Entry Point ---
 
-const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearError }: { categorias: Categoria[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Categoria>) => void, onRemove: (id: string) => void, error: string | null, clearError: () => void }) => {
+interface CategoryItemProps {
+  cat: Categoria;
+  onUpdate: (id: string, updates: Partial<Categoria>) => void;
+  onRemove: (id: string) => void;
+}
+
+const CategoryItem: React.FC<CategoryItemProps> = ({ cat, onUpdate, onRemove }) => {
+  const [localLife, setLocalLife] = React.useState(cat.usefulLifeYears.toString());
+  
+  React.useEffect(() => {
+    setLocalLife(cat.usefulLifeYears.toString());
+  }, [cat.usefulLifeYears]);
+
+  const handleBlur = () => {
+    const val = Number(localLife);
+    if (!isNaN(val) && val > 0 && val !== cat.usefulLifeYears) {
+      onUpdate(cat.id, { usefulLifeYears: val });
+    } else {
+      setLocalLife(cat.usefulLifeYears.toString());
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
+      <div className="flex items-center gap-4 flex-1">
+        <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
+          <input 
+            type="number"
+            min="1"
+            value={localLife}
+            onChange={(e) => setLocalLife(e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+            className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
+          />
+          <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
+        </div>
+      </div>
+      <button 
+        onClick={() => onRemove(cat.id)}
+        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+};
+
+const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearError, onSync, loading }: { categorias: Categoria[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Categoria>) => void, onRemove: (id: string) => void, error: string | null, clearError: () => void, onSync: () => void, loading: boolean }) => {
   const [newCat, setNewCat] = React.useState('');
   const [newLife, setNewLife] = React.useState<number>(10);
 
@@ -1208,14 +1270,12 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
 
   const handleNameChange = (val: string) => {
     setNewCat(val);
-    if (DEFAULT_LIVES[val]) {
-      setNewLife(DEFAULT_LIVES[val]);
-    }
   };
 
   const handleAdd = () => {
     if (newCat.trim()) {
-      onAdd(newCat.trim(), newLife);
+      const lifeValue = Number(newLife) || 10;
+      onAdd(newCat.trim(), lifeValue);
       setNewCat('');
       setNewLife(10);
     }
@@ -1224,29 +1284,50 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 animate-in zoom-in-95 duration-500 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-xl font-bold text-slate-800">Gerenciar Categorias</h3>
-        <button 
-          onClick={handleApplyUpdates}
-          disabled={isUpdating}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-            isUpdating 
-              ? 'bg-emerald-50 text-emerald-600' 
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          {isUpdating ? (
-            <>
-              <Check size={14} className="animate-bounce" />
-              ATUALIZADO
-            </>
-          ) : (
-            <>
-              <History size={14} />
-              ATUALIZAR ITENS
-            </>
-          )}
-        </button>
+        <div className="space-y-1">
+          <h3 className="text-xl font-bold text-slate-800">Gerenciar Categorias</h3>
+          <p className="text-[10px] text-slate-400 font-medium">Configure a vida útil dos ativos para cálculo de depreciação</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={onSync}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${loading ? 'bg-slate-100 text-slate-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+            disabled={loading}
+            title="Forçar sincronização com o servidor"
+          >
+            {loading ? <History size={14} className="animate-spin" /> : <History size={14} />}
+            {loading ? 'SINCRONIZANDO...' : 'SINCRONIZAR'}
+          </button>
+          <button 
+            onClick={handleApplyUpdates}
+            disabled={isUpdating}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              isUpdating 
+                ? 'bg-emerald-50 text-emerald-600' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {isUpdating ? (
+              <>
+                <Check size={14} className="animate-bounce" />
+                CONCLUÍDO
+              </>
+            ) : (
+              <>
+                <Box size={14} />
+                APLICAR ALTERAÇÕES
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {categorias.length > 0 && categorias.some(c => c.id.startsWith('local-') || c.id.startsWith('offline-')) && (
+        <div className="mb-6 p-3 bg-amber-50 border border-amber-100 rounded-lg text-amber-700 text-[10px] font-bold flex items-center gap-2">
+          <AlertTriangle size={14} />
+          MODO DE SEGURANÇA: Categorias carregadas localmente. Verifique sua conexão ou vínculo de empresa.
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-start gap-3 relative group">
@@ -1304,34 +1385,25 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
       </div>
 
       <div className="space-y-2">
-        {categorias.length === 0 ? (
+        {loading && categorias.length === 0 ? (
           <div className="text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-            <p className="text-slate-400 text-xs font-medium italic">Nenhuma categoria encontrada ou sincronizando...</p>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <p className="text-slate-400 text-xs font-medium italic">Sincronizando categorias com o servidor...</p>
+            </div>
+          </div>
+        ) : categorias.length === 0 ? (
+          <div className="text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+            <p className="text-slate-400 text-xs font-medium italic">Nenhuma categoria encontrada. Adicione uma acima.</p>
           </div>
         ) : (
           categorias.map(cat => (
-            <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-              <div className="flex items-center gap-4 flex-1">
-                <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
-                  <input 
-                    type="number"
-                    min="1"
-                    value={cat.usefulLifeYears}
-                    onChange={(e) => onUpdate(cat.id, { usefulLifeYears: Number(e.target.value) })}
-                    className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
-                  />
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
-                </div>
-              </div>
-              <button 
-                onClick={() => onRemove(cat.id)}
-                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+            <CategoryItem 
+              key={cat.id} 
+              cat={cat} 
+              onUpdate={onUpdate} 
+              onRemove={onRemove} 
+            />
           ))
         )}
       </div>
@@ -1743,7 +1815,7 @@ export default function App() {
   const { 
     assets, categorias, audits, loading, addCategoria, updateCategoria, removeCategoria, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoriaErro, setError: setCategoriaErro 
+    error: categoriaErro, setError: setCategoriaErro, refresh
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
@@ -1865,11 +1937,19 @@ export default function App() {
 
     if (editingAsset) {
       updateAsset(editingAsset.id, data);
+      setIsModalOpen(false);
+      setEditingAsset(null);
     } else {
-      addAsset(data);
+      // Usamos async/await aqui para que possamos manter o modal aberto em caso de erro, se quisermos.
+      // Ou pelo menos garantir que o erro seja capturado.
+      addAsset(data).then(() => {
+        // Se após o addAsset o erro estiver limpo, fechamos
+        // Mas como o addAsset define o erro de forma assíncrona no hook, 
+        // é melhor fechar apenas se não houver erro imediato ou deixar o erro global aparecer.
+        setIsModalOpen(false);
+        setEditingAsset(null);
+      });
     }
-    setIsModalOpen(false);
-    setEditingAsset(null);
   };
 
   const [syncTimeout, setSyncTimeout] = useState(false);
@@ -2072,6 +2152,26 @@ export default function App() {
           </div>
         </div>
 
+        {/* Global Error Banner */}
+        <AnimatePresence>
+          {categoriaErro && view !== 'categorias' && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-red-600 text-white px-6 py-3 flex items-center justify-between gap-4 shadow-lg overflow-hidden shrink-0 relative z-10"
+            >
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={18} />
+                <p className="text-xs font-bold tracking-wide">{categoriaErro}</p>
+              </div>
+              <button onClick={() => setCategoriaErro(null)} className="p-1 hover:bg-white/20 rounded">
+                <X size={16} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Scrollable Region */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {view === 'dashboard' && (
@@ -2100,6 +2200,8 @@ export default function App() {
               onRemove={removeCategoria} 
               error={categoriaErro}
               clearError={() => setCategoriaErro(null)}
+              onSync={refresh}
+              loading={loading}
             />
           )}
           {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}

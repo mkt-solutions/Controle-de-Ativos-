@@ -34,7 +34,8 @@ export function useAssets() {
 
       if (!userEmpresa) {
         // RESCUE LOGIC: Se o trigger falhou ou não existe, tentamos criar a empresa manualmente 
-        // caso o usuário tenha um company_name no metadata (vindo do cadastro)
+        // caso o usuário tenha um company_name no metadata (vindo do cadastro).
+        // Isso garante que mesmo se o SQL Trigger do Supabase falhar, o sistema funcione.
         const companyName = user.user_metadata?.company_name || 'Minha Empresa';
         console.log('⚠️ Empresa não encontrada. Tentando criar rede de segurança para:', companyName);
         
@@ -48,13 +49,16 @@ export function useAssets() {
             
           if (newEmpresa) {
             // 2. Vincular usuário
-            await supabase
+            const { error: errLink } = await supabase
               .from('usuarios_empresa')
               .insert([{ user_id: user.id, empresa_id: newEmpresa.id }]);
               
-            // 3. Tentar carregar de novo imediatamente
-            fetchAll(0, true);
-            return;
+            if (!errLink) {
+              console.log('✅ Empresa criada e vinculada via código de resgate.');
+              // 3. Tentar carregar de novo imediatamente
+              fetchAll(0, true);
+              return;
+            }
           }
         } catch (e) {
           console.error('Falha no resgate automático:', e);
@@ -78,56 +82,56 @@ export function useAssets() {
       // 2. Fetch using empresa_id
       const [catRes, assetRes, auditRes] = await Promise.all([
         supabase.from('categorias').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
-        supabase.from('assets').select('*, categorias(name)').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
+        supabase.from('assets').select('*').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
         supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false })
       ]);
 
-      if (catRes.error) console.error('❌ Erro categorias:', catRes.error);
-      if (assetRes.error) console.error('❌ Erro ativos:', assetRes.error);
-
-      // AUTO-INITIALIZE CATEGORIES IF EMPTY (AND WE HAVE A COMPANY)
-      if (userEmpresa && (!catRes.data || catRes.data.length === 0)) {
-        console.log('🌱 Verificando inicialização de categorias...');
-        const defaultCategories = [
-          { name: 'Imóveis', useful_life_years: 20, empresa_id: userEmpresa.empresa_id },
-          { name: 'Hardware', useful_life_years: 3, empresa_id: userEmpresa.empresa_id },
-          { name: 'Veículos', useful_life_years: 10, empresa_id: userEmpresa.empresa_id },
-          { name: 'Mobiliário', useful_life_years: 5, empresa_id: userEmpresa.empresa_id }
-        ];
-        
-        // Só tenta inserir se realmente não houver nada (para evitar duplicatas em caso de erro de fetch)
-        if (catRes.data?.length === 0) {
-           const { data: createdCats, error: insError } = await supabase.from('categorias').insert(defaultCategories).select();
-           if (insError) console.error('❌ Erro ao criar categorias padrão:', insError);
-           if (createdCats) {
-             setCategorias(createdCats.map((c: any) => ({
-               ...c,
-               usefulLifeYears: c.useful_life_years
-             })));
-           }
+      if (catRes.error) {
+        console.error('❌ Erro categorias:', catRes.error);
+        if (catRes.error.code === '42501') {
+          setError("Erro de Permissão (403): O banco de dados está bloqueando o acesso. Execute o script SQL de permissões.");
+        } else {
+          setError(`Erro ao carregar categorias: ${catRes.error.message}`);
         }
-      } else if (catRes.data) {
-        setCategorias(catRes.data.map((c: any) => ({
-          ...c,
-          usefulLifeYears: c.useful_life_years
-        })));
       }
+
+      const freshCats = catRes.data ? catRes.data.map((c: any) => ({
+        ...c,
+        usefulLifeYears: c.useful_life_years
+      })) : [];
+
+      setCategorias(freshCats);
+
+      if (assetRes.error) {
+        console.error('❌ Erro ativos:', assetRes.error);
+        setError(`Erro ao carregar ativos: ${assetRes.error.message}`);
+      }
+
       if (assetRes.data) {
-        setAssets(assetRes.data.map((a: any) => ({
-          ...a,
-          categoria: a.categorias?.name || 'Sem Categoria',
-          purchaseDate: a.purchase_date,
-          maintenanceNotes: a.maintenance_notes,
-          maintenanceHistory: a.maintenance_history,
-          inactiveReason: a.inactive_reason,
-          nextMaintenanceDate: a.next_maintenance_date,
-          maintenanceIntervalMonths: a.maintenance_interval_months,
-          hasPreventiveMaintenance: a.has_preventive_maintenance,
-          hasWarranty: a.has_warranty,
-          warrantyExpirationDate: a.warranty_expiration_date,
-          createdAt: a.created_at,
-          updatedAt: a.updated_at
-        })));
+        if (assetRes.data.length > 0) {
+          console.log('📊 Estrutura do primeiro ativo retornado:', Object.keys(assetRes.data[0]));
+        }
+        setAssets(assetRes.data.map((a: any) => {
+          const cat = freshCats.find(c => c.id === a.category_id || c.id === a.categoria_id);
+          return {
+            ...a,
+            categoria: cat?.name || 'Sem Categoria',
+            categoria_id: a.category_id || a.categoria_id,
+            purchaseDate: a.purchase_date,
+            value: a.value,
+            assignedTo: a.assigned_to,
+            maintenanceNotes: a.maintenance_notes,
+            maintenanceHistory: a.maintenance_history || [],
+            inactiveReason: a.inactive_reason,
+            nextMaintenanceDate: a.next_maintenance_date,
+            maintenanceIntervalMonths: a.maintenance_interval_months,
+            hasPreventiveMaintenance: a.has_preventive_maintenance,
+            hasWarranty: a.has_warranty,
+            warrantyExpirationDate: a.warranty_expiration_date,
+            createdAt: a.created_at,
+            updatedAt: a.updated_at
+          };
+        }));
       }
       if (auditRes.data) {
         setAudits(auditRes.data.map((audit: any) => ({
@@ -207,56 +211,94 @@ export function useAssets() {
 
     try {
       setError(null);
+      console.log('📤 Salvando categoria:', { name: name.trim(), useful_life_years: usefulLifeYears });
+      
       const { data, error: sbError } = await supabase
         .from('categorias')
         .insert([{ 
           name: name.trim(), 
-          useful_life_years: usefulLifeYears, 
+          useful_life_years: Number(usefulLifeYears), 
           empresa_id: currentEmpresaId 
         }])
         .select()
         .single();
       
       if (sbError) {
-        console.error('Erro Supabase:', sbError);
-        throw sbError;
+        console.error('❌ Erro Supabase ao salvar categoria:', sbError);
+        if (sbError.message.includes('useful_life_years')) {
+          setError("Erro de Banco de Dados: A coluna 'useful_life_years' não foi encontrada. Por favor, execute o script SQL de atualização no Supabase.");
+        } else {
+          setError(`Erro ao salvar no banco de dados: ${sbError.message}`);
+        }
+        return;
       }
       
       if (data) {
+        console.log('✅ Categoria salva:', data);
         setCategorias(prev => [...prev, {
           ...data,
           usefulLifeYears: data.useful_life_years
         }]);
       }
     } catch (err: any) {
-      console.error('Erro ao salvar categoria:', err);
-      setError(`Erro ao salvar: ${err.message || 'Verifique se as tabelas foram criadas no Supabase (clique no ícone de engrenagem para ver o SQL)'}`);
+      console.error('💥 Erro ao salvar categoria:', err);
+      setError(`Erro inesperado: ${err.message}`);
     }
   };
 
   const updateCategoria = async (id: string, updates: Partial<Categoria>) => {
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
-    if (updates.usefulLifeYears !== undefined) updateData.useful_life_years = updates.usefulLifeYears;
+    if (updates.usefulLifeYears !== undefined) {
+      updateData.useful_life_years = Number(updates.usefulLifeYears);
+    }
+
+    console.log('📤 Atualizando categoria:', { id, updateData });
 
     const { error } = await supabase
       .from('categorias')
       .update(updateData)
       .eq('id', id);
 
-    if (!error) {
+    if (error) {
+      console.error('❌ Erro ao atualizar categoria:', error);
+      setError(`Erro ao atualizar banco: ${error.message}`);
+    } else {
       setCategorias(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     }
   };
 
   const removeCategoria = async (id: string) => {
-    const { error } = await supabase.from('categorias').delete().eq('id', id);
-    if (!error) {
+    setError(null);
+    try {
+      // 1. Verificar se existem ativos vinculados
+      const { count, error: countErr } = await supabase
+        .from('assets')
+        .select('*', { count: 'exact', head: true })
+        .eq('category_id', id);
+
+      if (count && count > 0) {
+        setError('Não é possível excluir esta categoria pois existem ativos vinculados a ela. Exclua ou altere a categoria dos ativos primeiro.');
+        return;
+      }
+
+      const { error: sbError } = await supabase.from('categorias').delete().eq('id', id);
+      
+      if (sbError) {
+        console.error('Erro ao deletar categoria:', sbError);
+        setError(`Erro ao excluir: ${sbError.message}`);
+        return;
+      }
+      
       setCategorias(prev => prev.filter(c => c.id !== id));
+    } catch (err: any) {
+      console.error('Exceção ao deletar:', err);
+      setError('Erro inesperado ao tentar excluir.');
     }
   };
 
   const addAsset = async (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'empresa_id'>) => {
+    setError(null);
     let currentEmpresaId = empresaId;
     
     if (!currentEmpresaId) {
@@ -271,76 +313,101 @@ export function useAssets() {
     }
 
     if (!currentEmpresaId) {
+      console.error('❌ Falha ao adicionar ativo: Empresa ID não encontrado.');
       setError('Aguarde a sincronização da empresa.');
       return;
     }
 
-    let categoria_id = asset.categoria_id;
-    if (!categoria_id) {
-      const cat = categorias.find(c => c.name === asset.categoria);
-      if (cat) categoria_id = cat.id;
+    let categoryId = asset.categoria_id;
+    if (!categoryId) {
+      const cat = categorias.find(c => c.name.trim().toLowerCase() === (asset.categoria || "").trim().toLowerCase());
+      if (cat) {
+        categoryId = cat.id;
+        console.log(`📂 Mapeada categoria "${asset.categoria}" para ID: ${categoryId}`);
+      }
     }
 
-    const newAssetData = {
+    const newAssetData: any = {
       name: asset.name,
       tag: asset.tag,
-      category_id: categoria_id,
+      category_id: categoryId || null, 
       status: asset.status,
       purchase_date: asset.purchaseDate,
       value: asset.value,
       location: asset.location,
       assigned_to: asset.assignedTo,
-      assigned_to_user_id: asset.assigned_to_user_id,
+      description: asset.description,
+      empresa_id: currentEmpresaId,
       maintenance_notes: asset.maintenanceNotes,
       maintenance_history: asset.maintenanceHistory,
       inactive_reason: asset.inactiveReason,
-      next_maintenance_date: asset.nextMaintenanceDate,
-      maintenance_interval_months: asset.maintenanceIntervalMonths,
-      has_preventive_maintenance: asset.hasPreventiveMaintenance,
-      has_warranty: asset.hasWarranty,
-      warranty_expiration_date: asset.warrantyExpirationDate,
-      description: asset.description,
-      empresa_id: currentEmpresaId
+      next_maintenance_date: asset.nextMaintenanceDate || null,
+      maintenance_interval_months: asset.maintenanceIntervalMonths || 0,
+      has_preventive_maintenance: !!asset.hasPreventiveMaintenance,
+      has_warranty: !!asset.hasWarranty,
+      warranty_expiration_date: asset.warrantyExpirationDate || null
     };
 
-    const { data, error } = await supabase
-      .from('assets')
-      .insert([newAssetData])
-      .select('*, categorias(name)')
-      .single();
+    console.log('📤 Tentando inserir ativo no Supabase:', newAssetData);
 
-    if (data) {
-      const mapped = {
-        ...data,
-        categoria: data.categorias?.name || 'Sem Categoria',
-        purchaseDate: data.purchase_date,
-        maintenanceNotes: data.maintenance_notes,
-        maintenanceHistory: data.maintenance_history,
-        inactiveReason: data.inactive_reason,
-        nextMaintenanceDate: data.next_maintenance_date,
-        maintenanceIntervalMonths: data.maintenance_interval_months,
-        hasPreventiveMaintenance: data.has_preventive_maintenance,
-        hasWarranty: data.has_warranty,
-        warranty_expiration_date: data.warranty_expiration_date,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at
-      };
-      setAssets(prev => [mapped, ...prev]);
+    try {
+      const { data, error: insertError } = await supabase
+        .from('assets')
+        .insert([newAssetData])
+        .select() 
+        .single();
+
+      if (insertError) {
+        console.error('❌ Erro Supabase ao adicionar ativo:', insertError);
+        setError(`Erro ao salvar ativo: ${insertError.message}`);
+        return;
+      }
+
+      if (data) {
+        console.log('✅ Ativo adicionado com sucesso:', data);
+        
+        // Mapeamento manual do nome da categoria usando o estado local
+        const catLocal = categorias.find(c => c.id === data.category_id || c.id === (data as any).categoria_id);
+        
+        const mapped = {
+          ...data,
+          categoria: catLocal?.name || 'Sem Categoria',
+          categoria_id: data.category_id || (data as any).categoria_id,
+          purchaseDate: data.purchase_date,
+          value: data.value,
+          assignedTo: data.assigned_to,
+          maintenanceNotes: data.maintenance_notes,
+          maintenanceHistory: data.maintenance_history || [],
+          inactiveReason: data.inactive_reason,
+          nextMaintenanceDate: data.next_maintenance_date,
+          maintenanceIntervalMonths: data.maintenance_interval_months,
+          hasPreventiveMaintenance: data.has_preventive_maintenance,
+          hasWarranty: data.has_warranty,
+          warrantyExpirationDate: data.warranty_expiration_date,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        };
+        setAssets(prev => [mapped, ...prev]);
+        setError(null);
+      }
+    } catch (err: any) {
+      console.error('💥 Exceção ao adicionar ativo:', err);
+      setError(`Erro inesperado: ${err.message}`);
     }
-    if (error) console.error('Error adding asset:', error);
   };
 
   const updateAsset = async (id: string, updates: Partial<Asset>) => {
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.tag !== undefined) updateData.tag = updates.tag;
-    if (updates.categoria_id !== undefined) updateData.category_id = updates.categoria_id;
+    if (updates.categoria_id !== undefined || (updates as any).category_id !== undefined) {
+      updateData.category_id = updates.categoria_id || (updates as any).category_id;
+    }
     if (updates.status !== undefined) updateData.status = updates.status;
     if (updates.purchaseDate !== undefined) updateData.purchase_date = updates.purchaseDate;
     if (updates.value !== undefined) updateData.value = updates.value;
     if (updates.location !== undefined) updateData.location = updates.location;
     if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
-    if (updates.assigned_to_user_id !== undefined) updateData.assigned_to_user_id = updates.assigned_to_user_id;
     if (updates.maintenanceNotes !== undefined) updateData.maintenance_notes = updates.maintenanceNotes;
     if (updates.maintenanceHistory !== undefined) updateData.maintenance_history = updates.maintenanceHistory;
     if (updates.inactiveReason !== undefined) updateData.inactive_reason = updates.inactiveReason;
@@ -362,8 +429,15 @@ export function useAssets() {
   };
 
   const deleteAsset = async (id: string) => {
-    const { error } = await supabase.from('assets').delete().eq('id', id);
-    if (!error) {
+    try {
+      const { error } = await supabase.from('assets').delete().eq('id', id);
+      if (error) {
+        console.error('Erro ao deletar ativo:', error);
+        // Se for erro de permissão mas o item é local, ou se o usuário quer apenas "limpar" da tela
+        setError(`Erro ao excluir do banco: ${error.message}. Removendo apenas da visualização.`);
+      }
+      setAssets(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
       setAssets(prev => prev.filter(a => a.id !== id));
     }
   };
@@ -384,30 +458,30 @@ export function useAssets() {
     if (!currentEmpresaId) return;
 
     const prepared = newAssets.map(asset => {
-      let categoria_id = asset.categoria_id;
-      if (!categoria_id) {
-        const cat = categorias.find(c => c.name === asset.categoria);
-        if (cat) categoria_id = cat.id;
+      let categoryId = asset.categoria_id;
+      if (!categoryId) {
+        const cat = categorias.find(c => c.name.trim().toLowerCase() === (asset.categoria || '').trim().toLowerCase());
+        if (cat) categoryId = cat.id;
       }
 
       return {
         name: asset.name,
         tag: asset.tag,
-        category_id: categoria_id,
+        category_id: categoryId || null,
         status: asset.status,
         purchase_date: asset.purchaseDate,
         value: asset.value,
         location: asset.location,
         assigned_to: asset.assignedTo,
-        maintenance_notes: asset.maintenanceNotes,
-        maintenance_history: asset.maintenanceHistory,
-        inactive_reason: asset.inactiveReason,
-        next_maintenance_date: asset.nextMaintenanceDate,
-        maintenance_interval_months: asset.maintenanceIntervalMonths,
-        has_preventive_maintenance: asset.hasPreventiveMaintenance,
-        has_warranty: asset.hasWarranty,
-        warranty_expiration_date: asset.warrantyExpirationDate,
-        description: asset.description,
+        maintenance_notes: asset.maintenanceNotes || '',
+        maintenance_history: asset.maintenanceHistory || [],
+        inactive_reason: asset.inactiveReason || '',
+        next_maintenance_date: asset.nextMaintenanceDate || null,
+        maintenance_interval_months: asset.maintenanceIntervalMonths || 0,
+        has_preventive_maintenance: !!asset.hasPreventiveMaintenance,
+        has_warranty: !!asset.hasWarranty,
+        warranty_expiration_date: asset.warrantyExpirationDate || null,
+        description: asset.description || '',
         empresa_id: currentEmpresaId
       };
     });
@@ -415,25 +489,14 @@ export function useAssets() {
     const { data, error } = await supabase
       .from('assets')
       .insert(prepared)
-      .select('*, categorias(name)');
+      .select();
 
-    if (data) {
-      const mapped = data.map(d => ({
-        ...d,
-        categoria: d.categorias?.name || 'Sem Categoria',
-        purchaseDate: d.purchase_date,
-        maintenanceNotes: d.maintenance_notes,
-        maintenanceHistory: d.maintenance_history,
-        inactiveReason: d.inactive_reason,
-        nextMaintenanceDate: d.next_maintenance_date,
-        maintenanceIntervalMonths: d.maintenance_interval_months,
-        hasPreventiveMaintenance: d.has_preventive_maintenance,
-        hasWarranty: d.has_warranty,
-        warranty_expiration_date: d.warranty_expiration_date,
-        createdAt: d.created_at,
-        updatedAt: d.updated_at
-      }));
-      setAssets(prev => [...mapped, ...prev]);
+    if (error) {
+      console.error('❌ Erro no bulk insert:', error);
+      setError(`Erro ao importar ativos: ${error.message}`);
+    } else if (data) {
+      console.log(`✅ Bulk insert concluído: ${data.length} ativos.`);
+      fetchAll();
     }
   };
 
@@ -519,8 +582,34 @@ export function useAssets() {
   };
 
   const stats = useMemo(() => {
-    const totalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
+    const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
     
+    let totalRemainingValue = 0;
+    const now = new Date();
+
+    const assetsWithDepreciation = assets.map(asset => {
+      // Procura a categoria para pegar a vida útil
+      const cat = categorias.find(c => 
+        c.name.trim().toLowerCase() === (asset.categoria || "").trim().toLowerCase() ||
+        c.id === (asset as any).categoria_id
+      );
+      const usefulLifeYears = cat ? Number(cat.usefulLifeYears) : 10;
+      const usefulLifeMonths = Math.max(usefulLifeYears * 12, 1);
+      
+      const purchase = new Date(asset.purchaseDate);
+      const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
+      
+      const monthlyDepreciation = asset.value / usefulLifeMonths;
+      const depreciation = Math.min(asset.value, monthlyDepreciation * Math.max(0, monthsElapsed));
+      const remaining = asset.value - depreciation;
+      
+      totalRemainingValue += remaining;
+      
+      return { ...asset, depreciation, remaining };
+    });
+
+    const totalDepreciation = totalOriginalValue - totalRemainingValue;
+
     const byCategoria = assets.reduce((acc, curr) => {
       const catName = curr.categoria || 'Sem Categoria';
       acc[catName] = (acc[catName] || 0) + 1;
@@ -584,14 +673,17 @@ export function useAssets() {
 
     return {
       totalAssets: assets.length,
-      totalValue,
+      totalValue: totalRemainingValue, // Mostramos o valor residual como padrão no Dashboard
+      totalOriginalValue,
+      totalDepreciation,
+      totalRemainingValue,
       totalMaintenanceCost,
       alerts,
       byCategoria: Object.entries(byCategoria).map(([name, value]) => ({ name, value })),
       byStatus: Object.entries(byStatus).map(([name, value]) => ({ name, value })),
-      recentActivity: [...assets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5)
+      recentActivity: [...assets].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, 5)
     };
-  }, [assets]);
+  }, [assets, categorias]);
 
   return { 
     assets, 
@@ -611,6 +703,7 @@ export function useAssets() {
     deleteAudit,
     stats,
     error,
-    setError
+    setError,
+    refresh: () => fetchAll(3, true)
   };
 }
