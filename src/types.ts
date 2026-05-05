@@ -34,6 +34,7 @@ export interface Asset {
   assignedTo?: string;
   assigned_to_user_id?: string;
   maintenanceNotes?: string;
+  maintenanceValue?: number;
   maintenanceHistory?: MaintenanceSession[];
   inactiveReason?: string;
   nextMaintenanceDate?: string;

@@ -121,6 +121,7 @@ export function useAssets() {
             value: a.value,
             assignedTo: a.assigned_to,
             maintenanceNotes: a.maintenance_notes,
+            maintenanceValue: a.maintenance_value,
             maintenanceHistory: a.maintenance_history || [],
             inactiveReason: a.inactive_reason,
             nextMaintenanceDate: a.next_maintenance_date,
@@ -339,6 +340,7 @@ export function useAssets() {
       description: asset.description,
       empresa_id: currentEmpresaId,
       maintenance_notes: asset.maintenanceNotes,
+      maintenance_value: asset.maintenanceValue,
       maintenance_history: asset.maintenanceHistory,
       inactive_reason: asset.inactiveReason,
       next_maintenance_date: asset.nextMaintenanceDate || null,
@@ -377,6 +379,7 @@ export function useAssets() {
           value: data.value,
           assignedTo: data.assigned_to,
           maintenanceNotes: data.maintenance_notes,
+          maintenanceValue: data.maintenance_value,
           maintenanceHistory: data.maintenance_history || [],
           inactiveReason: data.inactive_reason,
           nextMaintenanceDate: data.next_maintenance_date,
@@ -409,6 +412,7 @@ export function useAssets() {
     if (updates.location !== undefined) updateData.location = updates.location;
     if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
     if (updates.maintenanceNotes !== undefined) updateData.maintenance_notes = updates.maintenanceNotes;
+    if (updates.maintenanceValue !== undefined) updateData.maintenance_value = updates.maintenanceValue;
     if (updates.maintenanceHistory !== undefined) updateData.maintenance_history = updates.maintenanceHistory;
     if (updates.inactiveReason !== undefined) updateData.inactive_reason = updates.inactiveReason;
     if (updates.nextMaintenanceDate !== undefined) updateData.next_maintenance_date = updates.nextMaintenanceDate;
@@ -474,6 +478,7 @@ export function useAssets() {
         location: asset.location,
         assigned_to: asset.assignedTo,
         maintenance_notes: asset.maintenanceNotes || '',
+        maintenance_value: asset.maintenanceValue || 0,
         maintenance_history: asset.maintenanceHistory || [],
         inactive_reason: asset.inactiveReason || '',
         next_maintenance_date: asset.nextMaintenanceDate || null,

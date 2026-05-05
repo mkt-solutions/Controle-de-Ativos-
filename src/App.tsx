@@ -528,7 +528,7 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
               <th className="px-6 py-4">Categoria</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Localização</th>
-              <th className="px-6 py-4">Manutenção</th>
+              <th className="px-6 py-4">Situação</th>
               <th className="px-6 py-4 text-right">Ações</th>
             </tr>
           </thead>
@@ -569,10 +569,31 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
                   </td>
                   <td className="px-6 py-4 text-slate-500">{asset.location}</td>
                   <td className="px-6 py-4">
-                    {asset.maintenanceHistory && asset.maintenanceHistory.length > 0 ? (
+                    {asset.status === 'Em Manutenção' ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <MapPin size={10} className="text-amber-500" />
+                          <span className="text-[10px] font-bold text-amber-700 uppercase">{asset.maintenanceNotes || 'Local não informado'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <DollarSign size={10} className="text-amber-500" />
+                          <span className="text-xs font-bold text-amber-600">{formatCurrency(asset.maintenanceValue || 0)}</span>
+                        </div>
+                      </div>
+                    ) : asset.status === 'Inativo' ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Motivo Inativo</span>
+                        <span className="text-xs text-red-600 font-medium">{asset.inactiveReason || 'Não informado'}</span>
+                      </div>
+                    ) : asset.status !== 'Ativo' ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Estado Atual</span>
+                        <span className="text-xs text-slate-600 font-medium">{asset.status}</span>
+                      </div>
+                    ) : asset.maintenanceHistory && asset.maintenanceHistory.length > 0 ? (
                       <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Total Gasto</p>
-                        <p className="text-xs font-semibold text-red-600">{formatCurrency(asset.maintenanceHistory.reduce((acc, curr) => acc + curr.cost, 0))}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Total Gasto Histórico</p>
+                        <p className="text-xs font-semibold text-slate-600">{formatCurrency(asset.maintenanceHistory.reduce((acc, curr) => acc + curr.cost, 0))}</p>
                       </div>
                     ) : (
                       <span className="text-slate-300 text-xs">—</span>
@@ -1899,22 +1920,29 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const status = formData.get('status') as AssetStatus;
-    const maintenanceCost = Number(formData.get('maintenanceCost') || 0);
+    const maintenanceValue = Number(formData.get('maintenanceValue') || 0);
     const maintenanceNotes = formData.get('maintenanceNotes') as string || '';
     const hasWarrantyValue = formData.get('hasWarranty') === 'on';
     const hasPreventiveValue = formData.get('hasPreventiveMaintenance') === 'on';
     
     let maintenanceHistory = editingAsset?.maintenanceHistory || [];
-    if (status === 'Em Manutenção' && maintenanceCost > 0) {
-      maintenanceHistory = [
-        ...maintenanceHistory,
-        {
-          id: crypto.randomUUID(),
-          date: new Date().toISOString(),
-          cost: maintenanceCost,
-          notes: maintenanceNotes,
-        }
-      ];
+    
+    // Se houve mudança significativa ou se é uma nova entrada
+    if (status === 'Em Manutenção' && maintenanceValue > 0) {
+      // Para manter a compatibilidade com a lógica anterior que adicionava ao histórico
+      // Mas evitando duplicar se for apenas uma edição do mesmo valor/notas (simplificado)
+      const lastSession = maintenanceHistory[maintenanceHistory.length - 1];
+      if (!lastSession || lastSession.cost !== maintenanceValue || lastSession.notes !== maintenanceNotes) {
+         maintenanceHistory = [
+          ...maintenanceHistory,
+          {
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+            cost: maintenanceValue,
+            notes: maintenanceNotes,
+          }
+        ];
+      }
     }
 
     const data = {
@@ -1931,6 +1959,7 @@ export default function App() {
       hasWarranty: hasWarrantyValue,
       warrantyExpirationDate: formData.get('warrantyExpirationDate') as string || '',
       maintenanceNotes,
+      maintenanceValue: status === 'Em Manutenção' ? maintenanceValue : 0,
       inactiveReason: formData.get('inactiveReason') as string || '',
       maintenanceHistory,
     };
@@ -2357,10 +2386,11 @@ export default function App() {
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor da Manutenção (BRL)</label>
                     <input 
-                      name="maintenanceCost" 
+                      name="maintenanceValue" 
                       type="number"
                       step="0.01"
                       placeholder="0.00"
+                      defaultValue={editingAsset?.maintenanceValue}
                       className="w-full px-3 py-2 bg-slate-50 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
                     />
                   </div>
