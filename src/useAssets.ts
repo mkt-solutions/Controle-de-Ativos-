@@ -8,8 +8,9 @@ export function useAssets() {
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchAll = async () => {
+  const fetchAll = async (retries = 3) => {
     setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -30,6 +31,11 @@ export function useAssets() {
       }
 
       if (!userEmpresa) {
+        if (retries > 0) {
+          console.log(`Empresa não encontrada, tentando novamente em 1s... (${retries} tentativas restantes)`);
+          setTimeout(() => fetchAll(retries - 1), 1000);
+          return;
+        }
         setEmpresaId(null);
         setLoading(false);
         return;
@@ -44,7 +50,12 @@ export function useAssets() {
         supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false })
       ]);
 
-      if (catRes.data) setCategories(catRes.data);
+      if (catRes.data) {
+        setCategories(catRes.data.map((c: any) => ({
+          ...c,
+          usefulLifeYears: c.useful_life_years
+        })));
+      }
       if (assetRes.data) {
         setAssets(assetRes.data.map((a: any) => ({
           ...a,
@@ -80,28 +91,89 @@ export function useAssets() {
 
   useEffect(() => {
     fetchAll();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') {
+        fetchAll();
+      } else if (event === 'SIGNED_OUT') {
+        setCategories([]);
+        setAssets([]);
+        setAudits([]);
+        setEmpresaId(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const addCategory = async (name: string, usefulLifeYears: number = 10) => {
-    if (name && empresaId && !categories.some(c => c.name === name)) {
-      const { data, error } = await supabase
+    if (!name.trim()) return;
+
+    let currentEmpresaId = empresaId;
+    
+    // Tentativa de obter empresaId se ainda não estiver carregado
+    if (!currentEmpresaId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: userEmpresa } = await supabase
+          .from('usuarios_empresa')
+          .select('empresa_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (userEmpresa) {
+          currentEmpresaId = userEmpresa.empresa_id;
+          setEmpresaId(currentEmpresaId);
+        }
+      }
+    }
+
+    if (!currentEmpresaId) {
+      setError('Sua empresa ainda não está vinculada. Tente recarregar a página.');
+      return;
+    }
+
+    if (categories.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
+      setError('Esta categoria já existe.');
+      return;
+    }
+
+    try {
+      setError(null);
+      const { data, error: sbError } = await supabase
         .from('categories')
-        .insert([{ name, useful_life_years: usefulLifeYears, empresa_id: empresaId }])
+        .insert([{ 
+          name: name.trim(), 
+          useful_life_years: usefulLifeYears, 
+          empresa_id: currentEmpresaId 
+        }])
         .select()
         .single();
       
-      if (data) setCategories(prev => [...prev, data]);
-      if (error) console.error('Error adding category:', error);
+      if (sbError) {
+        console.error('Erro Supabase:', sbError);
+        throw sbError;
+      }
+      
+      if (data) {
+        setCategories(prev => [...prev, {
+          ...data,
+          usefulLifeYears: data.useful_life_years
+        }]);
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar categoria:', err);
+      setError(`Erro ao salvar: ${err.message || 'Verifique se as tabelas foram criadas no Supabase (clique no ícone de engrenagem para ver o SQL)'}`);
     }
   };
 
   const updateCategory = async (id: string, updates: Partial<Category>) => {
+    const updateData: any = {};
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.usefulLifeYears !== undefined) updateData.useful_life_years = updates.usefulLifeYears;
+
     const { error } = await supabase
       .from('categories')
-      .update({
-        name: updates.name,
-        useful_life_years: updates.usefulLifeYears
-      })
+      .update(updateData)
       .eq('id', id);
 
     if (!error) {
@@ -441,6 +513,8 @@ export function useAssets() {
     toggleAssetAudit,
     finalizeAudit,
     deleteAudit,
-    stats 
+    stats,
+    error,
+    setError
   };
 }

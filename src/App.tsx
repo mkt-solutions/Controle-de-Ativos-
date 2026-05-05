@@ -77,17 +77,20 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         if (!authData.user) throw new Error('Falha ao criar usuário');
 
         // 2. Create Empresa (Multi-tenant)
-        // If registration used an existing empresa_id (invite flow), this would be different.
-        // For self-signup, we create a new company.
-        const empresaId = authData.user.id; // Using user ID as initial company ID is a common pattern for simplicity, or generate new
+        const empresaId = authData.user.id; 
+        console.log('Criando empresa com ID:', empresaId);
         
         const { error: empresaError } = await supabase
           .from('empresas')
           .insert([{ id: empresaId, nome: companyName }]);
         
-        if (empresaError) throw empresaError;
+        if (empresaError) {
+          console.error('Erro ao criar empresa:', empresaError);
+          throw new Error('Erro ao registrar empresa. Verifique se você executou o SQL no console do Supabase.');
+        }
 
         // 3. Create relationship
+        console.log('Criando vínculo de usuário...');
         const { error: relError } = await supabase
           .from('usuarios_empresa')
           .insert([{ 
@@ -96,7 +99,10 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
             role: 'admin' 
           }]);
         
-        if (relError) throw relError;
+        if (relError) {
+          console.error('Erro ao vincular usuário:', relError);
+          throw new Error('Erro ao vincular usuário à empresa. Verifique as tabelas no Supabase.');
+        }
 
         onAuthSuccess(authData.user);
       } else {
@@ -1202,7 +1208,7 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 
 // --- Entry Point ---
 
-const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories: Category[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Category>) => void, onRemove: (id: string) => void }) => {
+const CategoriesView = ({ categories, onAdd, onUpdate, onRemove, error, clearError }: { categories: Category[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Category>) => void, onRemove: (id: string) => void, error: string | null, clearError: () => void }) => {
   const [newCat, setNewCat] = React.useState('');
   const [newLife, setNewLife] = React.useState<number>(10);
 
@@ -1266,6 +1272,22 @@ const CategoriesView = ({ categories, onAdd, onUpdate, onRemove }: { categories:
           )}
         </button>
       </div>
+
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-start gap-3 relative group">
+          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold underline mb-1">Erro ao salvar</p>
+            <p className="text-xs leading-relaxed opacity-90">{error}</p>
+          </div>
+          <button 
+            onClick={clearError}
+            className="p-1 hover:bg-red-100 rounded-lg transition-colors shrink-0"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-lg flex gap-3">
         <Info size={18} className="text-blue-500 shrink-0 mt-0.5" />
@@ -1737,7 +1759,11 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 };
 
 export default function App() {
-  const { assets, categories, audits, loading, addCategory, updateCategory, removeCategory, stats, addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit } = useAssets();
+  const { 
+    assets, categories, audits, loading, addCategory, updateCategory, removeCategory, stats, 
+    addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
+    error: categoryError, setError: setCategoryError 
+  } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
@@ -2034,7 +2060,16 @@ export default function App() {
             />
           )}
           {view === 'reports' && <ReportsView assets={assets} categories={categories} audits={audits} />}
-          {view === 'categories' && <CategoriesView categories={categories} onAdd={addCategory} onUpdate={updateCategory} onRemove={removeCategory} />}
+          {view === 'categories' && (
+            <CategoriesView 
+              categories={categories} 
+              onAdd={addCategory} 
+              onUpdate={updateCategory} 
+              onRemove={removeCategory} 
+              error={categoryError}
+              clearError={() => setCategoryError(null)}
+            />
+          )}
           {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}
         </div>
       </main>
