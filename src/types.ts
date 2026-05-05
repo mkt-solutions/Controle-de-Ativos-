@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type AssetCategory = 'Hardware' | 'Software' | 'Mobiliário' | 'Veículos' | 'Infraestrutura' | 'Outros';
+export type CategoriaAtivo = 'Hardware' | 'Software' | 'Mobiliário' | 'Veículos' | 'Infraestrutura' | 'Outros';
 
 export type AssetStatus = 'Ativo' | 'Em Manutenção' | 'Inativo' | 'Baixado' | 'Emprestado';
 
-export interface Category {
+export interface Categoria {
   id: string;
   name: string;
   usefulLifeYears: number;
@@ -25,8 +25,8 @@ export interface Asset {
   id: string;
   name: string;
   tag: string; // Patrimônio ID
-  category: string; // Keep as string for UI but it will be linked to category_id
-  category_id?: string;
+  categoria: string; // Transformed from nested join or just label
+  categoria_id?: string;
   status: AssetStatus;
   purchaseDate: string;
   value: number;
@@ -53,7 +53,7 @@ export interface AuditRecord {
   auditorName: string;
   auditor_user_id?: string;
   verifiedIds: string[];
-  allAssetsSnapshot: { id: string, name: string, tag: string, category: string, value: number, location: string }[];
+  allAssetsSnapshot: { id: string, name: string, tag: string, categoria: string, value: number, location: string }[];
   isFinalized: boolean;
   empresa_id: string;
 }
@@ -63,7 +63,7 @@ export interface AssetStats {
   totalValue: number;
   totalMaintenanceCost: number;
   alerts: { id: string, name: string, type: string, date: string }[];
-  byCategory: { name: string; value: number }[];
+  byCategoria: { name: string; value: number }[];
   byStatus: { name: string; value: number }[];
   recentActivity: Asset[];
 }

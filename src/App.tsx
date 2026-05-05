@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2 } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
@@ -7,7 +7,7 @@ import { saveAs } from 'file-saver';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
-import { Asset, AssetStatus, AssetCategory, Category, AuditRecord } from './types';
+import { Asset, AssetStatus, CategoriaAtivo, Categoria, AuditRecord } from './types';
 import { supabase } from './lib/supabase';
 import { cn, formatCurrency, formatDate } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -62,13 +62,13 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
     
     try {
       if (isRegister) {
-        // 1. Sign up user
+        // 1. Sign up user - O SQL Trigger cuidará do resto!
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: {
-              company_name: companyName,
+              company_name: companyName, // O Trigger do banco vai ler isso
             }
           }
         });
@@ -76,33 +76,8 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         if (authError) throw authError;
         if (!authData.user) throw new Error('Falha ao criar usuário');
 
-        // 2. Create Empresa (Multi-tenant)
-        const empresaId = authData.user.id; 
-        console.log('Criando empresa com ID:', empresaId);
-        
-        const { error: empresaError } = await supabase
-          .from('empresas')
-          .insert([{ id: empresaId, nome: companyName }]);
-        
-        if (empresaError) {
-          console.error('Erro ao criar empresa:', empresaError);
-          throw new Error('Erro ao registrar empresa. Verifique se você executou o SQL no console do Supabase.');
-        }
-
-        // 3. Create relationship
-        console.log('Criando vínculo de usuário...');
-        const { error: relError } = await supabase
-          .from('usuarios_empresa')
-          .insert([{ 
-            user_id: authData.user.id, 
-            empresa_id: empresaId, 
-            role: 'admin' 
-          }]);
-        
-        if (relError) {
-          console.error('Erro ao vincular usuário:', relError);
-          throw new Error('Erro ao vincular usuário à empresa. Verifique as tabelas no Supabase.');
-        }
+        // Não precisamos mais de insert manual de empresa aqui no front, 
+        // o trigger 'on_auth_user_created' faz isso no servidor.
 
         onAuthSuccess(authData.user);
       } else {
@@ -304,7 +279,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
                   <tr key={asset.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4 font-mono text-xs text-slate-400">#{asset.tag}</td>
                     <td className="px-6 py-4 font-medium text-slate-800">{asset.name}</td>
-                    <td className="px-6 py-4 text-slate-500">{asset.category}</td>
+                    <td className="px-6 py-4 text-slate-500">{asset.categoria}</td>
                     <td className="px-6 py-4 text-slate-500">{asset.location}</td>
                   </tr>
                 ))}
@@ -320,7 +295,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
               <ResponsiveContainer width="100%" height="100%">
                 <RePieChart>
                   <Pie
-                    data={stats.byCategory}
+                    data={stats.byCategoria}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -328,7 +303,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    {stats.byCategory.map((entry: any, index: number) => (
+                    {stats.byCategoria.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -342,7 +317,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
             </div>
             
             <div className="w-full space-y-3">
-              {stats.byCategory.slice(0, 4).map((cat: any, idx: number) => (
+              {stats.byCategoria.slice(0, 4).map((cat: any, idx: number) => (
                 <div key={cat.name} className="flex justify-between items-center text-sm">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
@@ -359,9 +334,9 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
   );
 };
 
-const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categories: Category[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
+const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categorias: Categoria[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
   const [search, setSearch] = React.useState('');
-  const [filterCategory, setFilterCategory] = React.useState<string>('all');
+  const [filterCategoria, setFilterCategoria] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>(initialStatusFilter || 'all');
   const [expandedRowId, setExpandedRowId] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -381,7 +356,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
       const mappedAssets = data.map(item => ({
         name: item.Nome || item.name || '',
         tag: String(item.Patrimonio || item.tag || ''),
-        category: (item.Categoria || item.category || 'Outros') as AssetCategory,
+        categoria: (item.Categoria || item.categoria || item.category || 'Outros') as CategoriaAtivo,
         status: 'Ativo' as AssetStatus,
         value: Number(item.Valor || item.value || 0),
         purchaseDate: item['Data de Compra'] || item.purchaseDate || new Date().toISOString().split('T')[0],
@@ -403,9 +378,9 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
   const filtered = assets.filter(a => {
     const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase()) || 
                           a.tag.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || a.category === filterCategory;
+    const matchesCategoria = filterCategoria === 'all' || a.categoria === filterCategoria;
     const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
+    return matchesSearch && matchesCategoria && matchesStatus;
   });
 
   const handleDownloadTemplate = async () => {
@@ -415,7 +390,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
     worksheet.columns = [
       { header: 'Patrimonio', key: 'tag', width: 15 },
       { header: 'Nome', key: 'name', width: 30 },
-      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Localizacao', key: 'location', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
@@ -426,7 +401,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
     worksheet.addRow({
       tag: 'PAT001',
       name: 'Exemplo de Computador',
-      category: 'Computadores',
+      categoria: 'Computadores',
       location: 'Escritório Central',
       status: 'Ativo',
       value: 3500.00,
@@ -453,7 +428,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
     worksheet.columns = [
       { header: 'Patrimonio', key: 'tag', width: 15 },
       { header: 'Nome', key: 'name', width: 30 },
-      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data Compra', key: 'purchaseDate', width: 15 },
@@ -464,7 +439,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
       worksheet.addRow({
         tag: a.tag,
         name: a.name,
-        category: a.category,
+        categoria: a.categoria,
         status: a.status,
         value: a.value,
         purchaseDate: a.purchaseDate,
@@ -502,12 +477,12 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
             <option value="Inativo">Inativo</option>
           </select>
             <select 
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
+            value={filterCategoria}
+            onChange={(e) => setFilterCategoria(e.target.value)}
             className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm cursor-pointer"
           >
             <option value="all">Todas Categorias</option>
-            {categories.map(cat => (
+            {categorias.map(cat => (
               <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
@@ -580,7 +555,7 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-slate-500">{asset.category}</td>
+                  <td className="px-6 py-4 text-slate-500">{asset.categoria}</td>
                   <td className="px-6 py-4 focus:outline-none">
                     <span className={cn(
                       "px-2 py-1 text-[10px] rounded-full uppercase font-bold",
@@ -706,14 +681,14 @@ const AssetListView = ({ assets, categories, initialStatusFilter, onDelete, onEd
   );
 };
 
-const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categories: Category[], audits: AuditRecord[] }) => {
-  const calculateDepreciation = (originalValue: number, purchaseDate: string, categoryName: string) => {
+const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categorias: Categoria[], audits: AuditRecord[] }) => {
+  const calculateDepreciation = (originalValue: number, purchaseDate: string, nomeCategoria: string) => {
     const purchase = new Date(purchaseDate);
     const now = new Date();
     const monthsElapsed = (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
     
-    const category = categories.find(c => c.name === categoryName);
-    const usefulLifeYears = category ? category.usefulLifeYears : 5;
+    const categoria = categorias.find(c => c.name === nomeCategoria);
+    const usefulLifeYears = categoria ? categoria.usefulLifeYears : 5;
     const usefulLifeMonths = usefulLifeYears * 12;
     
     const monthlyDepreciation = originalValue / usefulLifeMonths;
@@ -729,7 +704,7 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
 
   const assetsWithMeta = assets.map(a => ({
     ...a,
-    ...calculateDepreciation(a.value, a.purchaseDate, a.category)
+    ...calculateDepreciation(a.value, a.purchaseDate, a.categoria)
   }));
 
   const totalOriginalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
@@ -737,9 +712,9 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
   const totalDepreciation = totalOriginalValue - totalRemainingValue;
 
   // 1. Distribuição por Categoria
-  const categoryData = categories.map(cat => ({
+  const categoriaData = categorias.map(cat => ({
     name: cat.name,
-    value: assets.filter(a => a.category === cat.name).length
+    value: assets.filter(a => a.categoria === cat.name).length
   })).filter(c => c.value > 0);
 
   // 2. Locais
@@ -781,9 +756,9 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     }));
 
   // 7. Manutenção Acumulada por Categoria
-  const maintenanceData = categories.map(cat => ({
+  const maintenanceData = categorias.map(cat => ({
     name: cat.name,
-    value: assets.filter(a => a.category === cat.name)
+    value: assets.filter(a => a.categoria === cat.name)
       .reduce((sum, a) => sum + (a.maintenanceHistory?.reduce((s, h) => s + h.cost, 0) || 0), 0)
   })).filter(c => c.value > 0).sort((a, b) => b.value - a.value);
 
@@ -802,7 +777,7 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     // Helper to calculate data for export
     const assetsWithMeta = assets.map(a => ({
       ...a,
-      ...calculateDepreciation(a.value, a.purchaseDate, a.category)
+      ...calculateDepreciation(a.value, a.purchaseDate, a.categoria)
     }));
 
     // 1. Aba: Resumo
@@ -838,7 +813,7 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
 
     wsResumo.addRow({ desc: '', val: '' });
     wsResumo.addRow({ desc: 'ATIVOS POR CATEGORIA', val: '' });
-    categoryData.forEach(c => {
+    categoriaData.forEach(c => {
       wsResumo.addRow({ desc: c.name, val: c.value });
     });
 
@@ -855,7 +830,7 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     wsAtivos.columns = [
       { header: 'ID do Ativo', key: 'id', width: 10 },
       { header: 'Nome do Ativo', key: 'name', width: 30 },
-      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Número Patrimônio', key: 'tag', width: 15 },
       { header: 'Localização', key: 'location', width: 20 },
       { header: 'Responsável', key: 'auditor', width: 20 },
@@ -869,11 +844,11 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     ];
 
     assetsWithMeta.forEach(a => {
-      const cat = categories.find(c => c.name === a.category);
+      const cat = categorias.find(c => c.name === a.categoria);
       wsAtivos.addRow({
         id: a.id.slice(-6),
         name: a.name,
-        category: a.category,
+        categoria: a.categoria,
         tag: a.tag,
         location: a.location,
         auditor: '-',
@@ -901,7 +876,7 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
     ];
 
     assetsWithMeta.forEach(a => {
-      const cat = categories.find(c => c.name === a.category);
+      const cat = categorias.find(c => c.name === a.categoria);
       const usefulLifeMonths = (cat?.usefulLifeYears || 5) * 12;
       const purchase = new Date(a.purchaseDate);
       const now = new Date();
@@ -1033,8 +1008,8 @@ const ReportsView = ({ assets, categories, audits }: { assets: Asset[], categori
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <RePieChart>
-                <Pie data={categoryData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
-                  {categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                <Pie data={categoriaData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                  {categoriaData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                 </Pie>
                 <Tooltip />
               </RePieChart>
@@ -1208,7 +1183,7 @@ const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean, onClose:
 
 // --- Entry Point ---
 
-const CategoriesView = ({ categories, onAdd, onUpdate, onRemove, error, clearError }: { categories: Category[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Category>) => void, onRemove: (id: string) => void, error: string | null, clearError: () => void }) => {
+const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearError }: { categorias: Categoria[], onAdd: (name: string, life: number) => void, onUpdate: (id: string, updates: Partial<Categoria>) => void, onRemove: (id: string) => void, error: string | null, clearError: () => void }) => {
   const [newCat, setNewCat] = React.useState('');
   const [newLife, setNewLife] = React.useState<number>(10);
 
@@ -1329,30 +1304,36 @@ const CategoriesView = ({ categories, onAdd, onUpdate, onRemove, error, clearErr
       </div>
 
       <div className="space-y-2">
-        {categories.map(cat => (
-          <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-            <div className="flex items-center gap-4 flex-1">
-              <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
-                <input 
-                  type="number"
-                  min="1"
-                  value={cat.usefulLifeYears}
-                  onChange={(e) => onUpdate(cat.id, { usefulLifeYears: Number(e.target.value) })}
-                  className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
-                />
-                <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
-              </div>
-            </div>
-            <button 
-              onClick={() => onRemove(cat.id)}
-              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Trash2 size={14} />
-            </button>
+        {categorias.length === 0 ? (
+          <div className="text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+            <p className="text-slate-400 text-xs font-medium italic">Nenhuma categoria encontrada ou sincronizando...</p>
           </div>
-        ))}
+        ) : (
+          categorias.map(cat => (
+            <div key={cat.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
+              <div className="flex items-center gap-4 flex-1">
+                <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
+                  <input 
+                    type="number"
+                    min="1"
+                    value={cat.usefulLifeYears}
+                    onChange={(e) => onUpdate(cat.id, { usefulLifeYears: Number(e.target.value) })}
+                    className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
+                  />
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => onRemove(cat.id)}
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -1453,7 +1434,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
       { header: 'Codigo Patrimonio', key: 'tag', width: 20 },
       { header: 'Localizado', key: 'status', width: 20 },
       { header: 'Item', key: 'name', width: 30 },
-      { header: 'Categoria', key: 'category', width: 20 },
+      { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data da Leitura', key: 'date', width: 20 },
       { header: 'Responsavel', key: 'auditor', width: 20 }
@@ -1465,7 +1446,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
         tag: `#${item.tag}`,
         status: isVerified ? 'LOCALIZADO' : 'NAO LOCALIZADO',
         name: item.name,
-        category: item.category,
+        categoria: item.categoria,
         value: item.value,
         date: formatDate(audit.date),
         auditor: audit.auditorName || 'N/A'
@@ -1760,13 +1741,13 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 
 export default function App() {
   const { 
-    assets, categories, audits, loading, addCategory, updateCategory, removeCategory, stats, 
+    assets, categorias, audits, loading, addCategoria, updateCategoria, removeCategoria, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoryError, setError: setCategoryError 
+    error: categoriaErro, setError: setCategoriaErro 
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
-  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categories' | 'audit'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit'>('dashboard');
   
   // Check auth on load
   React.useEffect(() => {
@@ -1867,7 +1848,7 @@ export default function App() {
     const data = {
       name: formData.get('name') as string,
       tag: formData.get('tag') as string,
-      category: formData.get('category') as AssetCategory,
+      categoria: formData.get('categoria') as CategoriaAtivo,
       status,
       value: Number(formData.get('value')),
       purchaseDate: formData.get('purchaseDate') as string,
@@ -1891,7 +1872,25 @@ export default function App() {
     setEditingAsset(null);
   };
 
-  if (isAuthenticated === null) return null; // Loading state
+  const [syncTimeout, setSyncTimeout] = useState(false);
+
+  useEffect(() => {
+    let timer: any;
+    if (loading && isAuthenticated) {
+      timer = setTimeout(() => setSyncTimeout(true), 15000);
+    } else {
+      setSyncTimeout(false);
+    }
+    return () => clearTimeout(timer);
+  }, [loading, isAuthenticated]);
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-8 h-8 border-3 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
@@ -1900,9 +1899,42 @@ export default function App() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
-          <p className="text-slate-500 font-medium animate-pulse">Carregando dados...</p>
+        <div className="flex flex-col items-center gap-6 max-w-xs text-center px-6">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-blue-600/10 border-t-blue-600 rounded-full animate-spin" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-ping" />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <p className="text-slate-700 font-bold uppercase tracking-[0.2em] text-[10px]">Sincronizando Empresa</p>
+            <p className="text-slate-500 text-xs leading-relaxed">
+              {syncTimeout 
+                ? "A sincronização está demorando mais que o esperado. Verifique se o SQL foi executado corretamente no console do Supabase." 
+                : "Estamos preparando seu ambiente de gestão de ativos."}
+            </p>
+          </div>
+
+          {syncTimeout && (
+            <div className="flex flex-col gap-2 w-full">
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full py-2 px-4 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold uppercase rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+              >
+                Tentar Novamente
+              </button>
+              <button 
+                onClick={async () => {
+                   await supabase.auth.signOut();
+                   window.location.reload();
+                }}
+                className="w-full py-2 px-4 text-rose-500 text-[10px] font-bold uppercase hover:underline"
+              >
+                Sair / Logout
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1951,7 +1983,7 @@ export default function App() {
             <SidebarItem icon={Box} label="Inventário" active={view === 'list'} onClick={() => { setView('list'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={ClipboardCheck} label="Controle" active={view === 'audit'} onClick={() => { setView('audit'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={PieChart} label="Relatórios" active={view === 'reports'} onClick={() => { setView('reports'); setIsSidebarOpen(false); }} />
-            <SidebarItem icon={Settings} label="Configurações" active={view === 'categories'} onClick={() => { setView('categories'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={Settings} label="Configurações" active={view === 'categorias'} onClick={() => { setView('categorias'); setIsSidebarOpen(false); }} />
             <a 
               href="https://mkt-solutions.com.br/placas-de-patrimonio/#cotacao" 
               target="_blank" 
@@ -2013,7 +2045,7 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-            {view !== 'categories' && view !== 'audit' && (
+            {view !== 'categorias' && view !== 'audit' && (
               <button 
                 onClick={() => { setEditingAsset(null); setIsModalOpen(true); }}
                 className="px-3 lg:px-4 py-2 bg-blue-600 text-white text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-blue-700 active:scale-95 transition-all whitespace-nowrap"
@@ -2052,22 +2084,22 @@ export default function App() {
           {view === 'list' && (
             <AssetListView 
               assets={assets.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.tag.toLowerCase().includes(searchTerm.toLowerCase()))} 
-              categories={categories}
+              categorias={categorias}
               initialStatusFilter={initialListStatus}
               onDelete={deleteAsset} 
               onEdit={handleEdit} 
               onBulkUpload={bulkAddAssets}
             />
           )}
-          {view === 'reports' && <ReportsView assets={assets} categories={categories} audits={audits} />}
-          {view === 'categories' && (
-            <CategoriesView 
-              categories={categories} 
-              onAdd={addCategory} 
-              onUpdate={updateCategory} 
-              onRemove={removeCategory} 
-              error={categoryError}
-              clearError={() => setCategoryError(null)}
+          {view === 'reports' && <ReportsView assets={assets} categorias={categorias} audits={audits} />}
+          {view === 'categorias' && (
+            <CategoriasView 
+              categorias={categorias} 
+              onAdd={addCategoria} 
+              onUpdate={updateCategoria} 
+              onRemove={removeCategoria} 
+              error={categoriaErro}
+              clearError={() => setCategoriaErro(null)}
             />
           )}
           {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}
@@ -2092,8 +2124,8 @@ export default function App() {
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
-              <select name="category" defaultValue={editingAsset?.category} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                {categories.map(cat => (
+              <select name="categoria" defaultValue={editingAsset?.categoria} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                {categorias.map(cat => (
                   <option key={cat.id} value={cat.name}>{cat.name}</option>
                 ))}
               </select>

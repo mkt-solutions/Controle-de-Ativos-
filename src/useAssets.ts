@@ -1,17 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Asset, AuditRecord, Category } from './types';
+import { Asset, AuditRecord, Categoria } from './types';
 import { supabase } from './lib/supabase';
 
 export function useAssets() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAll = async (retries = 3) => {
-    setLoading(true);
+  const fetchAll = async (retries = 5, isRetry = false) => {
+    // Só ativa o loading global na primeira tentativa para evitar "piscar"
+    if (!isRetry) setLoading(true);
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -31,9 +33,38 @@ export function useAssets() {
       }
 
       if (!userEmpresa) {
+        // RESCUE LOGIC: Se o trigger falhou ou não existe, tentamos criar a empresa manualmente 
+        // caso o usuário tenha um company_name no metadata (vindo do cadastro)
+        const companyName = user.user_metadata?.company_name || 'Minha Empresa';
+        console.log('⚠️ Empresa não encontrada. Tentando criar rede de segurança para:', companyName);
+        
+        try {
+          // 1. Criar empresa
+          const { data: newEmpresa, error: errEmp } = await supabase
+            .from('empresas')
+            .insert([{ name: companyName }])
+            .select()
+            .single();
+            
+          if (newEmpresa) {
+            // 2. Vincular usuário
+            await supabase
+              .from('usuarios_empresa')
+              .insert([{ user_id: user.id, empresa_id: newEmpresa.id }]);
+              
+            // 3. Tentar carregar de novo imediatamente
+            fetchAll(0, true);
+            return;
+          }
+        } catch (e) {
+          console.error('Falha no resgate automático:', e);
+        }
+
         if (retries > 0) {
-          console.log(`Empresa não encontrada, tentando novamente em 1s... (${retries} tentativas restantes)`);
-          setTimeout(() => fetchAll(retries - 1), 1000);
+          console.log(`Aguardando vínculo de empresa... (${retries} tentativas restantes)`);
+          // Se for retry, mantemos o loading ativo silenciosamente
+          setLoading(true); 
+          setTimeout(() => fetchAll(retries - 1, true), 2000);
           return;
         }
         setEmpresaId(null);
@@ -42,16 +73,41 @@ export function useAssets() {
       }
 
       setEmpresaId(userEmpresa.empresa_id);
+      console.log('✅ Empresa identificada:', userEmpresa.empresa_id);
 
       // 2. Fetch using empresa_id
       const [catRes, assetRes, auditRes] = await Promise.all([
-        supabase.from('categories').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
-        supabase.from('assets').select('*, categories(name)').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
+        supabase.from('categorias').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
+        supabase.from('assets').select('*, categorias(name)').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
         supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false })
       ]);
 
-      if (catRes.data) {
-        setCategories(catRes.data.map((c: any) => ({
+      if (catRes.error) console.error('❌ Erro categorias:', catRes.error);
+      if (assetRes.error) console.error('❌ Erro ativos:', assetRes.error);
+
+      // AUTO-INITIALIZE CATEGORIES IF EMPTY (AND WE HAVE A COMPANY)
+      if (userEmpresa && (!catRes.data || catRes.data.length === 0)) {
+        console.log('🌱 Verificando inicialização de categorias...');
+        const defaultCategories = [
+          { name: 'Imóveis', useful_life_years: 20, empresa_id: userEmpresa.empresa_id },
+          { name: 'Hardware', useful_life_years: 3, empresa_id: userEmpresa.empresa_id },
+          { name: 'Veículos', useful_life_years: 10, empresa_id: userEmpresa.empresa_id },
+          { name: 'Mobiliário', useful_life_years: 5, empresa_id: userEmpresa.empresa_id }
+        ];
+        
+        // Só tenta inserir se realmente não houver nada (para evitar duplicatas em caso de erro de fetch)
+        if (catRes.data?.length === 0) {
+           const { data: createdCats, error: insError } = await supabase.from('categorias').insert(defaultCategories).select();
+           if (insError) console.error('❌ Erro ao criar categorias padrão:', insError);
+           if (createdCats) {
+             setCategorias(createdCats.map((c: any) => ({
+               ...c,
+               usefulLifeYears: c.useful_life_years
+             })));
+           }
+        }
+      } else if (catRes.data) {
+        setCategorias(catRes.data.map((c: any) => ({
           ...c,
           usefulLifeYears: c.useful_life_years
         })));
@@ -59,7 +115,7 @@ export function useAssets() {
       if (assetRes.data) {
         setAssets(assetRes.data.map((a: any) => ({
           ...a,
-          category: a.categories?.name || 'Sem Categoria',
+          categoria: a.categorias?.name || 'Sem Categoria',
           purchaseDate: a.purchase_date,
           maintenanceNotes: a.maintenance_notes,
           maintenanceHistory: a.maintenance_history,
@@ -82,9 +138,9 @@ export function useAssets() {
           isFinalized: audit.is_finalized
         })));
       }
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -96,7 +152,7 @@ export function useAssets() {
       if (event === 'SIGNED_IN') {
         fetchAll();
       } else if (event === 'SIGNED_OUT') {
-        setCategories([]);
+        setCategorias([]);
         setAssets([]);
         setAudits([]);
         setEmpresaId(null);
@@ -106,33 +162,45 @@ export function useAssets() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const addCategory = async (name: string, usefulLifeYears: number = 10) => {
+  const addCategoria = async (name: string, usefulLifeYears: number = 10) => {
     if (!name.trim()) return;
 
     let currentEmpresaId = empresaId;
     
     // Tentativa de obter empresaId se ainda não estiver carregado
     if (!currentEmpresaId) {
+      console.log('EmpresaId ausente, tentando recuperação forçada...');
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: userEmpresa } = await supabase
-          .from('usuarios_empresa')
-          .select('empresa_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (userEmpresa) {
-          currentEmpresaId = userEmpresa.empresa_id;
-          setEmpresaId(currentEmpresaId);
+        // Tenta buscar até 3 vezes com pequeno delay
+        for (let i = 0; i < 3; i++) {
+          const { data: userEmpresa } = await supabase
+            .from('usuarios_empresa')
+            .select('empresa_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (userEmpresa) {
+            currentEmpresaId = userEmpresa.empresa_id;
+            setEmpresaId(currentEmpresaId);
+            break;
+          }
+          console.log(`Tentativa ${i + 1} de recuperação de empresa...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
 
     if (!currentEmpresaId) {
-      setError('Sua empresa ainda não está vinculada. Tente recarregar a página.');
+      setError('Sincronização em andamento. Por favor, aguarde 3 segundos e tente clicar em salvar novamente.');
+      fetchAll(5, true); 
       return;
     }
 
-    if (categories.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
+    // Se chegou aqui, temos empresaId, então limpamos o erro de sincronização
+    setError(null);
+
+    if (categorias.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
       setError('Esta categoria já existe.');
       return;
     }
@@ -140,7 +208,7 @@ export function useAssets() {
     try {
       setError(null);
       const { data, error: sbError } = await supabase
-        .from('categories')
+        .from('categorias')
         .insert([{ 
           name: name.trim(), 
           useful_life_years: usefulLifeYears, 
@@ -155,7 +223,7 @@ export function useAssets() {
       }
       
       if (data) {
-        setCategories(prev => [...prev, {
+        setCategorias(prev => [...prev, {
           ...data,
           usefulLifeYears: data.useful_life_years
         }]);
@@ -166,41 +234,57 @@ export function useAssets() {
     }
   };
 
-  const updateCategory = async (id: string, updates: Partial<Category>) => {
+  const updateCategoria = async (id: string, updates: Partial<Categoria>) => {
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.usefulLifeYears !== undefined) updateData.useful_life_years = updates.usefulLifeYears;
 
     const { error } = await supabase
-      .from('categories')
+      .from('categorias')
       .update(updateData)
       .eq('id', id);
 
     if (!error) {
-      setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+      setCategorias(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     }
   };
 
-  const removeCategory = async (id: string) => {
-    const { error } = await supabase.from('categories').delete().eq('id', id);
+  const removeCategoria = async (id: string) => {
+    const { error } = await supabase.from('categorias').delete().eq('id', id);
     if (!error) {
-      setCategories(prev => prev.filter(c => c.id !== id));
+      setCategorias(prev => prev.filter(c => c.id !== id));
     }
   };
 
   const addAsset = async (asset: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'empresa_id'>) => {
-    if (!empresaId) return;
+    let currentEmpresaId = empresaId;
+    
+    if (!currentEmpresaId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: userEmpresa } = await supabase.from('usuarios_empresa').select('empresa_id').eq('user_id', user.id).maybeSingle();
+        if (userEmpresa) {
+          currentEmpresaId = userEmpresa.empresa_id;
+          setEmpresaId(currentEmpresaId);
+        }
+      }
+    }
 
-    let category_id = asset.category_id;
-    if (!category_id) {
-      const cat = categories.find(c => c.name === asset.category);
-      if (cat) category_id = cat.id;
+    if (!currentEmpresaId) {
+      setError('Aguarde a sincronização da empresa.');
+      return;
+    }
+
+    let categoria_id = asset.categoria_id;
+    if (!categoria_id) {
+      const cat = categorias.find(c => c.name === asset.categoria);
+      if (cat) categoria_id = cat.id;
     }
 
     const newAssetData = {
       name: asset.name,
       tag: asset.tag,
-      category_id: category_id,
+      category_id: categoria_id,
       status: asset.status,
       purchase_date: asset.purchaseDate,
       value: asset.value,
@@ -216,19 +300,19 @@ export function useAssets() {
       has_warranty: asset.hasWarranty,
       warranty_expiration_date: asset.warrantyExpirationDate,
       description: asset.description,
-      empresa_id: empresaId
+      empresa_id: currentEmpresaId
     };
 
     const { data, error } = await supabase
       .from('assets')
       .insert([newAssetData])
-      .select('*, categories(name)')
+      .select('*, categorias(name)')
       .single();
 
     if (data) {
       const mapped = {
         ...data,
-        category: data.categories?.name || 'Sem Categoria',
+        categoria: data.categorias?.name || 'Sem Categoria',
         purchaseDate: data.purchase_date,
         maintenanceNotes: data.maintenance_notes,
         maintenanceHistory: data.maintenance_history,
@@ -250,7 +334,7 @@ export function useAssets() {
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.tag !== undefined) updateData.tag = updates.tag;
-    if (updates.category_id !== undefined) updateData.category_id = updates.category_id;
+    if (updates.categoria_id !== undefined) updateData.category_id = updates.categoria_id;
     if (updates.status !== undefined) updateData.status = updates.status;
     if (updates.purchaseDate !== undefined) updateData.purchase_date = updates.purchaseDate;
     if (updates.value !== undefined) updateData.value = updates.value;
@@ -285,19 +369,31 @@ export function useAssets() {
   };
 
   const bulkAddAssets = async (newAssets: Omit<Asset, 'id' | 'createdAt' | 'updatedAt' | 'empresa_id'>[]) => {
-    if (!empresaId) return;
+    let currentEmpresaId = empresaId;
+    if (!currentEmpresaId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: userEmpresa } = await supabase.from('usuarios_empresa').select('empresa_id').eq('user_id', user.id).maybeSingle();
+        if (userEmpresa) {
+          currentEmpresaId = userEmpresa.empresa_id;
+          setEmpresaId(currentEmpresaId);
+        }
+      }
+    }
+
+    if (!currentEmpresaId) return;
 
     const prepared = newAssets.map(asset => {
-      let category_id = asset.category_id;
-      if (!category_id) {
-        const cat = categories.find(c => c.name === asset.category);
-        if (cat) category_id = cat.id;
+      let categoria_id = asset.categoria_id;
+      if (!categoria_id) {
+        const cat = categorias.find(c => c.name === asset.categoria);
+        if (cat) categoria_id = cat.id;
       }
 
       return {
         name: asset.name,
         tag: asset.tag,
-        category_id: category_id,
+        category_id: categoria_id,
         status: asset.status,
         purchase_date: asset.purchaseDate,
         value: asset.value,
@@ -312,19 +408,19 @@ export function useAssets() {
         has_warranty: asset.hasWarranty,
         warranty_expiration_date: asset.warrantyExpirationDate,
         description: asset.description,
-        empresa_id: empresaId
+        empresa_id: currentEmpresaId
       };
     });
 
     const { data, error } = await supabase
       .from('assets')
       .insert(prepared)
-      .select('*, categories(name)');
+      .select('*, categorias(name)');
 
     if (data) {
       const mapped = data.map(d => ({
         ...d,
-        category: d.categories?.name || 'Sem Categoria',
+        categoria: d.categorias?.name || 'Sem Categoria',
         purchaseDate: d.purchase_date,
         maintenanceNotes: d.maintenance_notes,
         maintenanceHistory: d.maintenance_history,
@@ -350,7 +446,7 @@ export function useAssets() {
       id: a.id, 
       name: a.name, 
       tag: a.tag,
-      category: a.category,
+      categoria: a.categoria,
       value: a.value,
       location: a.location
     }));
@@ -425,8 +521,8 @@ export function useAssets() {
   const stats = useMemo(() => {
     const totalValue = assets.reduce((acc, curr) => acc + curr.value, 0);
     
-    const byCategory = assets.reduce((acc, curr) => {
-      const catName = curr.category || 'Sem Categoria';
+    const byCategoria = assets.reduce((acc, curr) => {
+      const catName = curr.categoria || 'Sem Categoria';
       acc[catName] = (acc[catName] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
@@ -491,7 +587,7 @@ export function useAssets() {
       totalValue,
       totalMaintenanceCost,
       alerts,
-      byCategory: Object.entries(byCategory).map(([name, value]) => ({ name, value })),
+      byCategoria: Object.entries(byCategoria).map(([name, value]) => ({ name, value })),
       byStatus: Object.entries(byStatus).map(([name, value]) => ({ name, value })),
       recentActivity: [...assets].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5)
     };
@@ -499,12 +595,12 @@ export function useAssets() {
 
   return { 
     assets, 
-    categories, 
+    categorias, 
     audits,
     loading,
-    addCategory, 
-    updateCategory,
-    removeCategory, 
+    addCategoria, 
+    updateCategoria,
+    removeCategoria, 
     addAsset, 
     updateAsset, 
     deleteAsset, 
