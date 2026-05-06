@@ -400,14 +400,25 @@ export function useAssets() {
   };
 
   const updateAsset = async (id: string, updates: Partial<Asset>) => {
+    setError(null);
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.tag !== undefined) updateData.tag = updates.tag;
+    
+    // Mapeamento de categoria -> category_id (paridade com addAsset)
+    if (updates.categoria !== undefined) {
+      const cat = categorias.find(c => c.name.trim().toLowerCase() === (updates.categoria || "").trim().toLowerCase());
+      if (cat) {
+        updateData.category_id = cat.id;
+      }
+    }
+    
     if (updates.categoria_id !== undefined || (updates as any).category_id !== undefined) {
       updateData.category_id = updates.categoria_id || (updates as any).category_id;
     }
+
     if (updates.status !== undefined) updateData.status = updates.status;
-    if (updates.purchaseDate !== undefined) updateData.purchase_date = updates.purchaseDate;
+    if (updates.purchaseDate !== undefined) updateData.purchase_date = updates.purchaseDate || null;
     if (updates.value !== undefined) updateData.value = updates.value;
     if (updates.location !== undefined) updateData.location = updates.location;
     if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
@@ -415,19 +426,31 @@ export function useAssets() {
     if (updates.maintenanceValue !== undefined) updateData.maintenance_value = updates.maintenanceValue;
     if (updates.maintenanceHistory !== undefined) updateData.maintenance_history = updates.maintenanceHistory;
     if (updates.inactiveReason !== undefined) updateData.inactive_reason = updates.inactiveReason;
-    if (updates.nextMaintenanceDate !== undefined) updateData.next_maintenance_date = updates.nextMaintenanceDate;
+    
+    // Tratamento de datas opcionais para evitar erros de string vazia no Postgres
+    if (updates.nextMaintenanceDate !== undefined) {
+      updateData.next_maintenance_date = updates.nextMaintenanceDate || null;
+    }
     if (updates.maintenanceIntervalMonths !== undefined) updateData.maintenance_interval_months = updates.maintenanceIntervalMonths;
     if (updates.hasPreventiveMaintenance !== undefined) updateData.has_preventive_maintenance = updates.hasPreventiveMaintenance;
     if (updates.hasWarranty !== undefined) updateData.has_warranty = updates.hasWarranty;
-    if (updates.warrantyExpirationDate !== undefined) updateData.warranty_expiration_date = updates.warrantyExpirationDate;
+    if (updates.warrantyExpirationDate !== undefined) {
+      updateData.warranty_expiration_date = updates.warrantyExpirationDate || null;
+    }
     if (updates.description !== undefined) updateData.description = updates.description;
+
+    console.log('📤 Enviando atualização para Supabase:', { id, updateData });
 
     const { error } = await supabase
       .from('assets')
       .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq('id', id);
 
-    if (!error) {
+    if (error) {
+      console.error('❌ Erro ao atualizar ativo:', error);
+      setError(`Erro ao atualizar no banco: ${error.message}`);
+    } else {
+      console.log('✅ Ativo atualizado com sucesso no Supabase');
       setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
     }
   };

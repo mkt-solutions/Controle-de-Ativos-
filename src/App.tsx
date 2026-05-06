@@ -204,7 +204,7 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
 
 // --- Main Views ---
 
-const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, onMaintenanceClick: () => void, onViewAll: () => void }) => {
+const DashboardView = ({ stats, onMaintenanceClick, onAlertsClick, onViewAll }: { stats: any, onMaintenanceClick: () => void, onAlertsClick: () => void, onViewAll: () => void }) => {
   const COLORS = ['#3b82f6', '#818cf8', '#94a3b8', '#64748b', '#ef4444', '#1e293b'];
 
   return (
@@ -219,7 +219,10 @@ const DashboardView = ({ stats, onMaintenanceClick, onViewAll }: { stats: any, o
           onClick={onMaintenanceClick}
         />
         
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[100px] max-h-[100px] overflow-hidden">
+        <div 
+          onClick={onAlertsClick}
+          className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[100px] max-h-[100px] overflow-hidden cursor-pointer hover:border-red-200 hover:shadow-md transition-all active:scale-[0.98]"
+        >
           <div className="flex items-center gap-2 mb-2 shrink-0">
             <div className="p-1.5 bg-red-50 rounded-lg">
               <Bell size={14} className="text-red-600" />
@@ -355,7 +358,7 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
       
       const mappedAssets = data.map(item => ({
         name: item.Nome || item.name || '',
-        tag: String(item.Patrimonio || item.tag || ''),
+        tag: String(item['Tag de Patrimônio'] || item.Patrimonio || item.tag || ''),
         categoria: (item.Categoria || item.categoria || item.category || 'Outros') as CategoriaAtivo,
         status: 'Ativo' as AssetStatus,
         value: Number(item.Valor || item.value || 0),
@@ -388,24 +391,30 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
     const worksheet = workbook.addWorksheet('Modelo_Importacao');
 
     worksheet.columns = [
-      { header: 'Patrimonio', key: 'tag', width: 15 },
+      { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Localizacao', key: 'location', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
-      { header: 'Data Compra', key: 'purchaseDate', width: 15 }
+      { header: 'Data de Compra', key: 'purchaseDate', width: 15 }
     ];
+
+    // Formatar coluna A como texto para suportar zeros à esquerda (ex: 000001)
+    worksheet.getColumn(1).numFmt = '@';
+    
+    // Formatar coluna G como Data (DD/MM/YYYY)
+    worksheet.getColumn(7).numFmt = 'DD/MM/YYYY';
 
     // Add an example row as instruction
     worksheet.addRow({
-      tag: 'PAT001',
+      tag: '000001',
       name: 'Exemplo de Computador',
       categoria: 'Computadores',
       location: 'Escritório Central',
       status: 'Ativo',
       value: 3500.00,
-      purchaseDate: '2024-01-15'
+      purchaseDate: new Date(2024, 0, 15) // Usando objeto Date para respeitar a formatação da coluna
     });
 
     // Formatting headers
@@ -426,14 +435,19 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
     const worksheet = workbook.addWorksheet('Inventario');
 
     worksheet.columns = [
-      { header: 'Patrimonio', key: 'tag', width: 15 },
+      { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
-      { header: 'Data Compra', key: 'purchaseDate', width: 15 },
+      { header: 'Data de Compra', key: 'purchaseDate', width: 15 },
       { header: 'Localizacao', key: 'location', width: 20 }
     ];
+
+    // Formatar coluna A como texto
+    worksheet.getColumn(1).numFmt = '@';
+    // Formatar coluna F como Data
+    worksheet.getColumn(6).numFmt = 'DD/MM/YYYY';
 
     filtered.forEach(a => {
       worksheet.addRow({
@@ -442,7 +456,7 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
         categoria: a.categoria,
         status: a.status,
         value: a.value,
-        purchaseDate: a.purchaseDate,
+        purchaseDate: new Date(a.purchaseDate),
         location: a.location
       });
     });
@@ -783,9 +797,10 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
     .sort((a, b) => a.monthsRemaining - b.monthsRemaining)
     .slice(0, 5)
     .map(a => ({
-      name: a.tag,
+      name: `${a.tag} - ${a.name}`,
       meses: a.monthsRemaining,
-      fullName: a.name
+      tag: a.tag,
+      itemName: a.name
     }));
 
   // 7. Manutenção Acumulada por Categoria
@@ -1129,7 +1144,7 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
               <BarChart data={nearEndOfLife} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                 <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} width={80} />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} width={120} />
                 <Tooltip cursor={{fill: '#f8fafc'}} />
                 <Bar dataKey="meses" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20} />
               </BarChart>
@@ -1891,6 +1906,7 @@ export default function App() {
   const [hasWarranty, setHasWarranty] = React.useState<boolean>(false);
   const [hasPreventiveMaintenance, setHasPreventiveMaintenance] = React.useState<boolean>(false);
   const [initialListStatus, setInitialListStatus] = React.useState<string>('all');
+  const [showAlertsModal, setShowAlertsModal] = React.useState(false);
 
   const navigateToFilteredList = (status: string) => {
     setInitialListStatus(status);
@@ -2207,6 +2223,7 @@ export default function App() {
             <DashboardView 
               stats={stats} 
               onMaintenanceClick={() => navigateToFilteredList('Em Manutenção')} 
+              onAlertsClick={() => setShowAlertsModal(true)}
               onViewAll={() => setView('list')}
             />
           )}
@@ -2238,6 +2255,66 @@ export default function App() {
       </main>
 
       {/* Modal Form */}
+      {/* Alerts Modal */}
+      <Modal
+        isOpen={showAlertsModal}
+        onClose={() => setShowAlertsModal(false)}
+        title="Alertas Próximos"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Abaixo estão os ativos que necessitam de atenção imediata devido a manutenções ou garantias próximas.
+          </p>
+          <div className="max-h-[60vh] overflow-y-auto px-1 custom-scrollbar space-y-3">
+            {stats.alerts && stats.alerts.length > 0 ? (
+              stats.alerts.map((alert: any) => (
+                <div 
+                  key={`${alert.id}-${alert.type}-${alert.date}`} 
+                  className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between hover:border-blue-200 hover:bg-blue-50/30 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-2.5 rounded-xl", 
+                      alert.type === 'Garantia' ? "bg-blue-100 text-blue-600" : "bg-amber-100 text-amber-600"
+                    )}>
+                      {alert.type === 'Garantia' ? <Search size={20} /> : <Clock size={20} />}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">{alert.name}</h4>
+                      <p className="text-xs text-slate-500">{alert.type}: {alert.date.split('-').reverse().join('/')}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const asset = assets.find(a => a.id === alert.id);
+                      if (asset) {
+                        setEditingAsset(asset);
+                        setIsModalOpen(true);
+                      }
+                      setShowAlertsModal(false);
+                    }}
+                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                  >
+                    <Edit2 size={18} />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <Check size={32} className="mx-auto text-emerald-500 mb-2" />
+                <p className="text-sm font-medium text-slate-500">Tudo em dia! Nenhum alerta crítico.</p>
+              </div>
+            )}
+          </div>
+          <button 
+            onClick={() => setShowAlertsModal(false)}
+            className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all"
+          >
+            FECHAR
+          </button>
+        </div>
+      </Modal>
+
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => { setIsModalOpen(false); setEditingAsset(null); }} 
