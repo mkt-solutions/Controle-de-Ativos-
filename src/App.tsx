@@ -1672,7 +1672,13 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
                 exit={{ opacity: 0, height: 0 }}
                 className="bg-slate-100 p-6 border-b border-slate-200"
               >
-                <div className="max-w-md mx-auto">
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start gap-3 text-left">
+                    <Info size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                      A leitura via Scan deve ser feita pelo celular. Acesse o site, faça seu login e inicie as leituras.
+                    </p>
+                  </div>
                   <Scanner onScan={handleScan} />
                 </div>
               </motion.div>
@@ -1715,10 +1721,18 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200">
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border-2 border-dashed border-slate-200 px-6">
            <ClipboardCheck size={48} className="text-slate-300 mb-4" />
            <h3 className="text-lg font-bold text-slate-800">Pronto para conferência?</h3>
-           <p className="text-slate-500 text-sm mb-6">Inicie uma nova verificação para conferir seus ativos fisicamente.</p>
+           <p className="text-slate-500 text-sm mb-4">Inicie uma nova verificação para conferir seus ativos fisicamente.</p>
+           
+           <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3 text-left mb-6 max-w-sm">
+             <Info size={18} className="text-blue-600 mt-0.5 shrink-0" />
+             <p className="text-xs text-blue-800 leading-relaxed">
+               A leitura via Scan deve ser feita pelo celular. Acesse o site, faça seu login e inicie as leituras.
+             </p>
+           </div>
+
            <button 
              onClick={() => setShowStartModal(true)}
              className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all text-sm"
