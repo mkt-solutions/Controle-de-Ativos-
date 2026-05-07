@@ -1504,25 +1504,35 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
 
 const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
   const [error, setError] = React.useState<string | null>(null);
+  const [isActive, setIsActive] = React.useState(false);
 
   React.useEffect(() => {
+    if (!isActive) return;
+
     const html5QrCode = new Html5Qrcode("reader");
-    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+    const config = { 
+      fps: 15, 
+      qrbox: (viewWidth: number, viewHeight: number) => {
+        const size = Math.min(viewWidth, viewHeight) * 0.7;
+        return { width: size, height: size };
+      } 
+    };
 
     const startScanner = async () => {
       try {
         await html5QrCode.start(
-          { facingMode: "environment" }, // Prioritize back camera
+          { facingMode: "environment" },
           config,
           (decodedText) => {
             onScan(decodedText);
           },
-          () => {} // silent failure for frames without matches
+          () => {}
         );
         setError(null);
       } catch (err) {
         console.error("Erro ao iniciar câmera:", err);
-        setError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+        setError("Não foi possível acessar a câmera. Verifique as permissões.");
+        setIsActive(false);
       }
     };
 
@@ -1533,25 +1543,60 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
         html5QrCode.stop().catch(err => console.error("Erro ao parar scanner:", err));
       }
     };
-  }, [onScan]);
+  }, [onScan, isActive]);
 
   return (
-    <div className="bg-slate-900 rounded-xl overflow-hidden shadow-2xl relative min-h-[300px] flex flex-col">
-      <div id="reader" className="w-full h-full flex-1"></div>
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 p-6 text-center">
-          <div className="text-white">
-            <Camera size={32} className="mx-auto mb-3 text-red-500" />
-            <p className="text-sm font-medium">{error}</p>
-            <p className="text-xs text-slate-400 mt-2">Certifique-se de que o site tem permissão para usar a câmera.</p>
+    <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-2xl relative min-h-[360px] flex flex-col items-center justify-center border-2 border-slate-800">
+      {!isActive ? (
+        <div className="p-8 text-center space-y-6">
+          <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
+            <Camera size={48} className="text-blue-400 opacity-60" />
           </div>
+          <div className="space-y-2">
+            <h4 className="text-white font-bold text-xl">Câmera Desligada</h4>
+            <p className="text-slate-400 text-sm max-w-[240px] mx-auto">
+              A câmera está desativada para economizar energia. Ative-a para ler as tags.
+            </p>
+          </div>
+          <button 
+            onClick={() => setIsActive(true)}
+            className="w-full max-w-[220px] py-4 bg-blue-600 text-white rounded-2xl font-bold text-base hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-3 mx-auto shadow-xl shadow-blue-900/40"
+          >
+            <Camera size={22} /> LIGAR CÂMERA
+          </button>
         </div>
+      ) : (
+        <>
+          <div id="reader" className="w-full h-full flex-1"></div>
+          {error && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center z-20">
+              <Camera size={40} className="text-red-500 mb-4" />
+              <p className="text-white font-medium mb-4">{error}</p>
+              <button 
+                onClick={() => setIsActive(false)}
+                className="px-6 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-700"
+              >
+                VOLTAR
+              </button>
+            </div>
+          )}
+          <div className="absolute top-4 right-4 z-30">
+            <button 
+              onClick={() => setIsActive(false)}
+              className="p-3 bg-red-600/20 text-red-500 rounded-full hover:bg-red-600/40 transition-colors backdrop-blur-md border border-red-500/30"
+              title="Desligar Câmera"
+            >
+              <Power size={20} />
+            </button>
+          </div>
+          <div className="p-4 bg-slate-950/80 backdrop-blur-md border-t border-slate-800 w-full z-10">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-400 flex items-center justify-center gap-3">
+              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>
+              Escaneando Agora...
+            </p>
+          </div>
+        </>
       )}
-      <div className="p-4 bg-slate-800 text-white text-center">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center justify-center gap-2">
-          <Scan size={14} className="animate-pulse" /> Escaneando Código...
-        </p>
-      </div>
     </div>
   );
 };
