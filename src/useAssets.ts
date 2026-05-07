@@ -31,53 +31,7 @@ export function useAssets() {
       if (empresaError) {
         console.error('Erro ao buscar empresa:', empresaError);
       }
-
       if (!userEmpresa) {
-        // RESCUE LOGIC: Se o trigger falhou ou não existe, tentamos criar a empresa manualmente 
-        // caso o usuário tenha um company_name no metadata (vindo do cadastro).
-        // Isso garante que mesmo se o SQL Trigger do Supabase falhar, o sistema funcione.
-        const companyName = user.user_metadata?.company_name || 'Minha Empresa';
-        console.log('⚠️ Empresa não encontrada. Tentando criar rede de segurança para:', companyName);
-        
-        try {
-          // 1. Criar empresa
-          const { data: newEmpresa, error: errEmp } = await supabase
-            .from('empresas')
-            .insert([{ name: companyName }])
-            .select()
-            .single();
-            
-          if (newEmpresa) {
-            // 2. Vincular usuário
-            const { error: errLink } = await supabase
-              .from('usuarios_empresa')
-              .insert([{ user_id: user.id, empresa_id: newEmpresa.id }]);
-              
-            if (!errLink) {
-              console.log('✅ Empresa criada e vinculada via código de resgate.');
-              // 3. Tentar carregar de novo imediatamente
-              fetchAll(0, true);
-              return;
-            } else {
-              console.error('❌ Falha ao vincular empresa no resgate:', errLink);
-              setError(`Erro ao vincular empresa: ${errLink.message}. Verifique as permissões RLS da tabela 'usuarios_empresa'.`);
-            }
-          } else if (errEmp) {
-            console.error('❌ Falha ao criar empresa no resgate:', errEmp);
-            setError(`Erro ao criar empresa (Resgate): ${errEmp.message}. Verifique as permissões RLS da tabela 'empresas'.`);
-          }
-        } catch (e: any) {
-          console.error('Falha no resgate automático:', e);
-          setError(`Falha inesperada no resgate de empresa: ${e.message}`);
-        }
-
-        if (retries > 0) {
-          console.log(`Aguardando vínculo de empresa... (${retries} tentativas restantes)`);
-          // Se for retry, mantemos o loading ativo silenciosamente
-          setLoading(true); 
-          setTimeout(() => fetchAll(retries - 1, true), 2000);
-          return;
-        }
         setEmpresaId(null);
         setLoading(false);
         return;
@@ -787,6 +741,7 @@ export function useAssets() {
     stats,
     error,
     setError,
+    empresaId,
     refresh: () => fetchAll(3, true)
   };
 }

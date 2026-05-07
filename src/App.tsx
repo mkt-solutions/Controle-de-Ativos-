@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2 } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -47,11 +47,12 @@ const StatCard = ({ label, value, trend, trendColor, onClick }: { label: string,
 
 // --- Components ---
 
-const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => {
-  const [isRegister, setIsRegister] = React.useState(true);
+// --- Auth & Onboarding ---
+
+const AuthPage = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => {
+  const [isRegister, setIsRegister] = React.useState(false);
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [companyName, setCompanyName] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -62,66 +63,14 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
     
     try {
       if (isRegister) {
-        const trimmedCompanyName = companyName.trim();
-        
-        // 1. Tentar Sign up com metadados (para o trigger)
-        const metadata = {
-          company_name: trimmedCompanyName,
-          companyName: trimmedCompanyName,
-          full_name: trimmedCompanyName,
-          display_name: trimmedCompanyName,
-        };
-
-        let { data: authData, error: authError } = await supabase.auth.signUp({
+        // Registro simplificado: APENAS email e senha para evitar falhas de Trigger
+        const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
-          password,
-          options: {
-            data: metadata
-          }
+          password
         });
         
-        // 2. Se falhar com erro de banco (Trigger quebrado), tentamos sem metadados
-        // Verificação mais ampla para erros de banco que indicam falha no trigger do Supabase
-        const isDatabaseError = authError && (
-          authError.message.toLowerCase().includes('database error') || 
-          authError.message.toLowerCase().includes('saving new user') ||
-          authError.message.toLowerCase().includes('trigger') ||
-          authError.status === 500
-        );
-
-        if (isDatabaseError) {
-          console.warn('⚠️ Trigger de banco falhou ou erro no servidor. Tentando registro minimalista absoluto...');
-          
-          // TENTATIVA 2: Sem metadados (para evitar o gatilho possivelmente problemático)
-          const secondTry = await supabase.auth.signUp({
-            email,
-            password
-          });
-          
-          if (!secondTry.error && secondTry.data.user) {
-            authData = secondTry.data;
-            authError = null;
-          } else {
-            // TENTATIVA 3: Login de emergência
-            console.log('🔄 Tentando login de emergência...');
-            const emergencyLogin = await supabase.auth.signInWithPassword({ email, password });
-            if (emergencyLogin.data.user) {
-              console.log('✅ Login de emergência funcionou!');
-              onAuthSuccess(emergencyLogin.data.user);
-              return;
-            }
-          }
-        }
-        
         if (authError) throw authError;
-        if (!authData.user) throw new Error('Falha ao criar usuário');
-
-        // Se passamos pelo fallback, tentamos salvar os dados da empresa via metadata depois
-        if (isDatabaseError && authData.user) {
-          await supabase.auth.updateUser({ data: metadata }).catch(e => console.warn('Erro ao atualizar dados pós-fallback:', e));
-        }
-
-        onAuthSuccess(authData.user);
+        if (authData.user) onAuthSuccess(authData.user);
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -131,18 +80,15 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         if (data.user) onAuthSuccess(data.user);
       }
     } catch (err: any) {
-      console.error('💥 Auth Exception:', err);
+      console.error('💥 Auth Error:', err);
       let msg = err.message || 'Erro ao processar autenticação';
       
-      // Tradução e Dicas Amigáveis
-      if (msg.toLowerCase().includes('database error saving new user')) {
-        msg = "Erro no Banco de Dados: O SQL Trigger do Supabase falhou ao criar o usuário/empresa. \n\nCOMO CORRIGIR:\n1. Acesse o Supabase Dashboard.\n2. Vá em 'SQL Editor'.\n3. Execute o script de criação de tabelas e triggers (fornecido pelo assistente).\n4. Se o erro persistir, desabilite o trigger 'on_auth_user_created' temporariamente.";
-      } else if (msg.toLowerCase().includes('user already registered') || msg.toLowerCase().includes('already exists')) {
-        msg = "Este e-mail já está cadastrado. Tente entrar no sistema ou use outro e-mail.";
-      } else if (msg.toLowerCase().includes('invalid format')) {
-        msg = "Formato de e-mail inválido.";
-      } else if (msg.toLowerCase().includes('at least 6 characters')) {
-        msg = "A senha deve ter pelo menos 6 caracteres.";
+      if (msg.toLowerCase().includes('user already registered')) {
+        msg = "Este e-mail já está cadastrado. Tente entrar no sistema.";
+      } else if (msg.toLowerCase().includes('database error') || msg.toLowerCase().includes('trigger')) {
+        msg = "Erro crítico de banco: Remova o trigger 'on_auth_user_created' no Supabase Dashboard (SQL Editor) para habilitar cadastros.";
+      } else if (msg.toLowerCase().includes('invalid login credentials')) {
+        msg = "E-mail ou senha inválidos.";
       }
 
       setError(msg);
@@ -154,105 +100,220 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden"
       >
-        <div className="p-8">
-          <div className="flex justify-center mb-8">
-            <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
-              <Box className="text-white" size={32} />
+        <div className="p-10">
+          <div className="flex justify-center mb-10">
+            <div className="p-4 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+              <Package className="text-white" size={32} />
             </div>
           </div>
           
-          <h2 className="text-2xl font-bold text-center text-slate-900 mb-2">
-            {isRegister ? 'Criar Nova Conta' : 'Acessar Sistema'}
+          <h2 className="text-2xl font-black text-center text-slate-900 tracking-tight mb-2">
+            {isRegister ? 'Seja Bem-vindo!' : 'Acessar Painel'}
           </h2>
-          <p className="text-center text-slate-500 text-sm mb-8">
+          <p className="text-center text-slate-500 text-sm mb-8 font-medium">
             {isRegister 
-              ? 'Registre sua empresa para começar o controle.' 
-              : 'Entre com suas credenciais para continuar.'}
+              ? 'Crie sua conta em segundos e comece a gerenciar.' 
+              : 'Bem-vindo de volta ao Solutions Tags.'}
           </p>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-center gap-2">
-              <AlertTriangle size={16} />
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm flex items-center gap-3 font-medium">
+              <AlertTriangle size={18} className="shrink-0" />
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegister && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                  <Building2 size={12} /> Nome da Empresa
-                </label>
-                <input
-                  required
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Ex: Tech Solutions Ltda"
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                />
-              </div>
-            )}
-
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                <Mail size={12} /> E-mail
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 ml-1">
+                <Mail size={14} /> E-mail
               </label>
               <input
                 required
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                placeholder="exemplo@empresa.com"
+                className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 transition-all font-medium"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
-                <Lock size={12} /> Senha
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 ml-1">
+                <Lock size={14} /> Senha
               </label>
               <input
                 required
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                placeholder="********"
+                className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 transition-all font-medium"
               />
             </div>
 
             <button
               disabled={isLoading}
-              className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 uppercase tracking-wide disabled:opacity-50 mt-6"
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-base shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50"
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  {isRegister ? 'Cadastrar Empresa' : 'Entrar no Sistema'}
-                  <ArrowUpRight size={18} />
+                  {isRegister ? 'Registrar Agora' : 'Entrar no Sistema'}
+                  <ArrowUpRight size={20} />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <p className="text-sm text-slate-500">
-              {isRegister ? 'Já possui uma conta?' : 'Ainda não tem acesso?'}
+          <div className="mt-10 pt-8 border-t border-slate-50 text-center">
+            <p className="text-sm text-slate-500 font-medium">
+              {isRegister ? 'Já tem uma conta?' : 'Ainda não é cadastrado?'}
               <button
                 onClick={() => setIsRegister(!isRegister)}
                 className="ml-2 text-blue-600 font-bold hover:underline"
               >
-                {isRegister ? 'Fazer Log-in' : 'Criar Registro'}
+                {isRegister ? 'Entrar aqui' : 'Criar Conta Grátis'}
               </button>
             </p>
           </div>
         </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- SETUP INICIAL (Configuração Pós-Login) ---
+const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onComplete: () => void, embedded?: boolean }) => {
+  const [companyName, setCompanyName] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const trimmedName = companyName.trim();
+      if (!trimmedName) throw new Error('O nome da empresa é obrigatório.');
+
+      // 1. Criar empresa
+      const { data: company, error: errComp } = await supabase
+        .from('empresas')
+        .insert({ nome: trimmedName })
+        .select()
+        .single();
+
+      if (errComp) throw errComp;
+
+      // 2. Vincular usuário logado como dono/admin
+      const { error: errLink } = await supabase
+        .from('usuarios_empresa')
+        .insert({
+          user_id: user.id,
+          empresa_id: company.id,
+          role: 'admin'
+        });
+
+      if (errLink) throw errLink;
+
+      // 3. Opcionalmente atualizar metadados (para consistência)
+      await supabase.auth.updateUser({
+        data: { 
+          company_name: trimmedName,
+          display_name: trimmedName 
+        }
+      });
+
+      onComplete();
+    } catch (err: any) {
+      console.error('❌ Setup Error:', err);
+      setError(err.message || 'Não foi possível configurar sua empresa.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const content = (
+    <>
+      <div className="text-center mb-8">
+        {!embedded && (
+          <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <Building2 size={40} className="text-blue-600" />
+          </div>
+        )}
+        <h2 className={cn("font-black text-slate-900 tracking-tight", embedded ? "text-xl text-left" : "text-2xl")}>
+          {embedded ? "Confirmar Nome da Empresa" : "Um último passo!"}
+        </h2>
+        <p className={cn("text-slate-500 mt-2 font-medium", embedded ? "text-sm text-left" : "text-base")}>
+          Como devemos chamar sua organização ou empresa?
+        </p>
+      </div>
+
+      <form onSubmit={handleSetup} className="space-y-6">
+        <div className="space-y-2">
+          <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Organização</label>
+          <input
+            type="text"
+            required
+            autoFocus
+            className="w-full px-6 py-4 bg-slate-50 border-none rounded-2xl text-base focus:ring-2 focus:ring-blue-500 transition-all font-bold placeholder:text-slate-300"
+            placeholder="Ex: Minha Logística S/A"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+          />
+        </div>
+
+        {error && (
+          <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl font-bold border border-red-100 flex items-center gap-3">
+            <AlertTriangle size={18} />
+            {error}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-base hover:bg-slate-800 active:scale-[0.98] transition-all shadow-xl shadow-slate-200 flex items-center justify-center gap-3"
+          >
+            {isLoading ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>CONCLUIR CONFIGURAÇÃO <Check size={20} /></>
+            )}
+          </button>
+          
+          {!embedded && (
+            <button 
+              type="button"
+              onClick={() => supabase.auth.signOut()}
+              className="py-3 text-slate-400 text-sm font-bold hover:text-red-500 transition-colors uppercase tracking-widest"
+            >
+              Sair desta conta
+            </button>
+          )}
+        </div>
+      </form>
+    </>
+  );
+
+  if (embedded) return <div>{content}</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
+      >
+        {content}
       </motion.div>
     </div>
   );
@@ -1965,11 +2026,11 @@ export default function App() {
   const { 
     assets, categorias, audits, loading, addCategoria, updateCategoria, removeCategoria, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoriaErro, setError: setCategoriaErro, refresh
+    error: categoriaErro, setError: setCategoriaErro, empresaId, refresh
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
-  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit' | 'configuracoes'>('dashboard');
   
   // Check auth on load
   React.useEffect(() => {
@@ -2132,10 +2193,10 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
   }
 
-  if (loading) {
+  if (loading && !empresaId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-6 max-w-xs text-center px-6">
@@ -2222,7 +2283,8 @@ export default function App() {
             <SidebarItem icon={Box} label="Inventário" active={view === 'list'} onClick={() => { setView('list'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={ClipboardCheck} label="Controle" active={view === 'audit'} onClick={() => { setView('audit'); setIsSidebarOpen(false); }} />
             <SidebarItem icon={PieChart} label="Relatórios" active={view === 'reports'} onClick={() => { setView('reports'); setIsSidebarOpen(false); }} />
-            <SidebarItem icon={Settings} label="Configurações" active={view === 'categorias'} onClick={() => { setView('categorias'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={Settings} label="Categorias" active={view === 'categorias'} onClick={() => { setView('categorias'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={Building2} label="Configurações" active={view === 'configuracoes'} onClick={() => { setView('configuracoes'); setIsSidebarOpen(false); }} />
             <a 
               href="https://mkt-solutions.com.br/placas-de-patrimonio/#cotacao" 
               target="_blank" 
@@ -2365,6 +2427,54 @@ export default function App() {
             />
           )}
           {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}
+          {view === 'configuracoes' && (
+            <div className="max-w-2xl mx-auto py-8">
+              <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-xl shadow-slate-200/50">
+                <div className="flex items-center gap-5 mb-10">
+                  <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl">
+                    <Building2 size={32} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">Configuração da Empresa</h2>
+                    <p className="text-slate-500 font-medium">Configure sua organização para gerenciar ativos.</p>
+                  </div>
+                </div>
+
+                {!empresaId ? (
+                  <div className="space-y-8">
+                    <div className="p-6 bg-amber-50 border border-amber-100 rounded-3xl flex items-start gap-5">
+                      <AlertTriangle className="text-amber-600 shrink-0 mt-1" size={24} />
+                      <div>
+                        <h4 className="text-amber-900 font-bold text-base">Empresa Necessária</h4>
+                        <p className="text-amber-700 font-medium text-sm mt-1 leading-relaxed">
+                          Para começar a usar o sistema, você precisa cadastrar o nome da sua empresa. Isso criará seu espaço de trabalho exclusivo.
+                        </p>
+                      </div>
+                    </div>
+                    <SetupCompany user={currentUser} onComplete={() => refresh()} embedded={true} />
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="p-8 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-emerald-500 text-white rounded-2xl">
+                          <Check size={24} />
+                        </div>
+                        <div>
+                          <p className="text-emerald-800 font-black text-sm uppercase tracking-widest">Status: Ativo</p>
+                          <h3 className="text-lg font-bold text-emerald-900">Sua organização está vinculada</h3>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-6 bg-slate-50 rounded-2xl text-center">
+                      <p className="text-slate-500 text-sm font-medium">Se precisar alterar o nome da empresa ou transferir a titularidade, entre em contato com o suporte.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
