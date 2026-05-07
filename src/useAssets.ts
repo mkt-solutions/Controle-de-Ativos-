@@ -8,6 +8,7 @@ export function useAssets() {
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
+  const [empresaNome, setEmpresaNome] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = async (retries = 5, isRetry = false) => {
@@ -38,6 +39,18 @@ export function useAssets() {
       }
 
       setEmpresaId(userEmpresa.empresa_id);
+      
+      // 1.1 Fetch Empresa Name
+      const { data: empresaData } = await supabase
+        .from('empresas')
+        .select('nome')
+        .eq('id', userEmpresa.empresa_id)
+        .maybeSingle();
+      
+      if (empresaData) {
+        setEmpresaNome(empresaData.nome);
+      }
+      
       console.log('✅ Empresa identificada:', userEmpresa.empresa_id);
 
       // 2. Fetch using empresa_id
@@ -366,6 +379,26 @@ export function useAssets() {
     } catch (err: any) {
       console.error('💥 Exceção ao adicionar ativo:', err);
       setError(`Erro inesperado: ${err.message}`);
+      return false;
+    }
+  };
+
+  const updateEmpresaNome = async (novoNome: string) => {
+    if (!empresaId || !novoNome.trim()) return false;
+    
+    try {
+      const { error } = await supabase
+        .from('empresas')
+        .update({ nome: novoNome.trim() })
+        .eq('id', empresaId);
+        
+      if (error) throw error;
+      
+      setEmpresaNome(novoNome.trim());
+      return true;
+    } catch (err: any) {
+      console.error('Erro ao atualizar nome da empresa:', err);
+      setError(`Erro ao atualizar nome da empresa: ${err.message}`);
       return false;
     }
   };
@@ -742,6 +775,8 @@ export function useAssets() {
     error,
     setError,
     empresaId,
+    empresaNome,
+    updateEmpresaNome,
     refresh: () => fetchAll(3, true)
   };
 }

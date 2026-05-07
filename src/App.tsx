@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -2056,11 +2056,46 @@ export default function App() {
   const { 
     assets, categorias, audits, loading, addCategoria, updateCategoria, removeCategoria, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoriaErro, setError: setCategoriaErro, empresaId, refresh
+    error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, updateEmpresaNome, refresh
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit' | 'configuracoes'>('dashboard');
+  const [tempCompanyName, setTempCompanyName] = React.useState<string | null>(null);
+  const [isSavingCompany, setIsSavingCompany] = React.useState(false);
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
+  const [passwordFeedback, setPasswordFeedback] = React.useState<{type: 'success' | 'error', msg: string} | null>(null);
+  
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordFeedback(null);
+    
+    if (newPassword.length < 6) {
+      setPasswordFeedback({ type: 'error', msg: 'A senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      setPasswordFeedback({ type: 'error', msg: 'As senhas não coincidem.' });
+      return;
+    }
+    
+    setIsUpdatingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      
+      setPasswordFeedback({ type: 'success', msg: 'Senha atualizada com sucesso!' });
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      setPasswordFeedback({ type: 'error', msg: error.message || 'Erro ao atualizar senha.' });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
   
   // Check auth on load
   React.useEffect(() => {
@@ -2485,20 +2520,114 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    <div className="p-8 bg-emerald-50 rounded-3xl border border-emerald-100 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 bg-emerald-500 text-white rounded-2xl">
-                          <Check size={24} />
-                        </div>
-                        <div>
-                          <p className="text-emerald-800 font-black text-sm uppercase tracking-widest">Status: Ativo</p>
-                          <h3 className="text-lg font-bold text-emerald-900">Sua organização está vinculada</h3>
+                    <div className="p-8 bg-emerald-50 rounded-3xl border border-emerald-100 mb-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-200">
+                            <Check size={24} />
+                          </div>
+                          <div>
+                            <p className="text-emerald-700 font-black text-[10px] uppercase tracking-widest">Status: Licença Ativa</p>
+                            <h3 className="text-xl font-black text-emerald-900 tracking-tight">Sua organização está vinculada</h3>
+                          </div>
                         </div>
                       </div>
                     </div>
                     
-                    <div className="p-6 bg-slate-50 rounded-2xl text-center">
-                      <p className="text-slate-500 text-sm font-medium">Se precisar alterar o nome da empresa ou transferir a titularidade, entre em contato com o suporte.</p>
+                    <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100">
+                      <h4 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
+                        <Edit3 size={16} className="text-blue-600" /> Detalhes da Empresa
+                      </h4>
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Organização</label>
+                          <div className="flex gap-3">
+                            <input
+                              type="text"
+                              className="flex-1 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-base focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-800"
+                              value={tempCompanyName !== null ? tempCompanyName : (empresaNome || '')}
+                              onChange={(e) => setTempCompanyName(e.target.value)}
+                              placeholder="Nome da sua empresa"
+                            />
+                            <button
+                              onClick={async () => {
+                                if (!tempCompanyName) return;
+                                setIsSavingCompany(true);
+                                const success = await updateEmpresaNome(tempCompanyName);
+                                if (success) {
+                                  setTempCompanyName(null);
+                                }
+                                setIsSavingCompany(false);
+                              }}
+                              disabled={isSavingCompany || tempCompanyName === null || tempCompanyName === empresaNome}
+                              className="px-8 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+                            >
+                              {isSavingCompany ? 'SALVANDO...' : 'SALVAR'}
+                            </button>
+                          </div>
+                          {tempCompanyName !== null && tempCompanyName !== empresaNome && (
+                            <p className="text-[10px] text-amber-600 font-bold ml-1 mt-2 flex items-center gap-1">
+                              <AlertTriangle size={12} /> Alteração pendente. Clique em salvar para confirmar.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100">
+                      <h4 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
+                        <Lock size={16} className="text-blue-600" /> Segurança da Conta
+                      </h4>
+                      <form onSubmit={handleUpdatePassword} className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nova Senha</label>
+                            <input
+                              type="password"
+                              required
+                              className="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl text-base focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-800"
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="••••••••"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Confirmar Senha</label>
+                            <input
+                              type="password"
+                              required
+                              className="w-full px-6 py-4 bg-white border border-slate-200 rounded-2xl text-base focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-800"
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="••••••••"
+                            />
+                          </div>
+                        </div>
+                        
+                        {passwordFeedback && (
+                          <div className={cn(
+                            "p-4 rounded-2xl text-sm font-bold border flex items-center gap-3 animate-in fade-in slide-in-from-top-1",
+                            passwordFeedback.type === 'success' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-red-50 text-red-600 border-red-100"
+                          )}>
+                            {passwordFeedback.type === 'success' ? <Check size={18} /> : <AlertTriangle size={18} />}
+                            {passwordFeedback.msg}
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={isUpdatingPassword || !newPassword}
+                          className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                        >
+                          {isUpdatingPassword ? 'ATUALIZANDO...' : <>ATUALIZAR SENHA <Lock size={18} /></>}
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className="p-6 text-center">
+                      <p className="text-slate-400 text-xs font-medium italic">
+                        Para transferir a titularidade da conta ou excluir a organização, entre em contato com o administrador global do sistema.
+                      </p>
                     </div>
                   </div>
                 )}
