@@ -62,22 +62,64 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
     
     try {
       if (isRegister) {
-        // 1. Sign up user - O SQL Trigger cuidará do resto!
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const trimmedCompanyName = companyName.trim();
+        
+        // 1. Tentar Sign up com metadados (para o trigger)
+        const metadata = {
+          company_name: trimmedCompanyName,
+          companyName: trimmedCompanyName,
+          full_name: trimmedCompanyName,
+          display_name: trimmedCompanyName,
+        };
+
+        let { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: {
-              company_name: companyName, // O Trigger do banco vai ler isso
-            }
+            data: metadata
           }
         });
+        
+        // 2. Se falhar com erro de banco (Trigger quebrado), tentamos sem metadados
+        // Verificação mais ampla para erros de banco que indicam falha no trigger do Supabase
+        const isDatabaseError = authError && (
+          authError.message.toLowerCase().includes('database error') || 
+          authError.message.toLowerCase().includes('saving new user') ||
+          authError.message.toLowerCase().includes('trigger') ||
+          authError.status === 500
+        );
+
+        if (isDatabaseError) {
+          console.warn('⚠️ Trigger de banco falhou ou erro no servidor. Tentando registro minimalista absoluto...');
+          
+          // TENTATIVA 2: Sem metadados (para evitar o gatilho possivelmente problemático)
+          const secondTry = await supabase.auth.signUp({
+            email,
+            password
+          });
+          
+          if (!secondTry.error && secondTry.data.user) {
+            authData = secondTry.data;
+            authError = null;
+          } else {
+            // TENTATIVA 3: Login de emergência
+            console.log('🔄 Tentando login de emergência...');
+            const emergencyLogin = await supabase.auth.signInWithPassword({ email, password });
+            if (emergencyLogin.data.user) {
+              console.log('✅ Login de emergência funcionou!');
+              onAuthSuccess(emergencyLogin.data.user);
+              return;
+            }
+          }
+        }
         
         if (authError) throw authError;
         if (!authData.user) throw new Error('Falha ao criar usuário');
 
-        // Não precisamos mais de insert manual de empresa aqui no front, 
-        // o trigger 'on_auth_user_created' faz isso no servidor.
+        // Se passamos pelo fallback, tentamos salvar os dados da empresa via metadata depois
+        if (isDatabaseError && authData.user) {
+          await supabase.auth.updateUser({ data: metadata }).catch(e => console.warn('Erro ao atualizar dados pós-fallback:', e));
+        }
 
         onAuthSuccess(authData.user);
       } else {
@@ -89,7 +131,21 @@ const AuthScreen = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) =
         if (data.user) onAuthSuccess(data.user);
       }
     } catch (err: any) {
-      setError(err.message || 'Erro ao processar autenticação');
+      console.error('💥 Auth Exception:', err);
+      let msg = err.message || 'Erro ao processar autenticação';
+      
+      // Tradução e Dicas Amigáveis
+      if (msg.toLowerCase().includes('database error saving new user')) {
+        msg = "Erro no Banco de Dados: O SQL Trigger do Supabase falhou ao criar o usuário/empresa. \n\nCOMO CORRIGIR:\n1. Acesse o Supabase Dashboard.\n2. Vá em 'SQL Editor'.\n3. Execute o script de criação de tabelas e triggers (fornecido pelo assistente).\n4. Se o erro persistir, desabilite o trigger 'on_auth_user_created' temporariamente.";
+      } else if (msg.toLowerCase().includes('user already registered') || msg.toLowerCase().includes('already exists')) {
+        msg = "Este e-mail já está cadastrado. Tente entrar no sistema ou use outro e-mail.";
+      } else if (msg.toLowerCase().includes('invalid format')) {
+        msg = "Formato de e-mail inválido.";
+      } else if (msg.toLowerCase().includes('at least 6 characters')) {
+        msg = "A senha deve ter pelo menos 6 caracteres.";
+      }
+
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

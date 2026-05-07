@@ -58,10 +58,17 @@ export function useAssets() {
               // 3. Tentar carregar de novo imediatamente
               fetchAll(0, true);
               return;
+            } else {
+              console.error('❌ Falha ao vincular empresa no resgate:', errLink);
+              setError(`Erro ao vincular empresa: ${errLink.message}. Verifique as permissões RLS da tabela 'usuarios_empresa'.`);
             }
+          } else if (errEmp) {
+            console.error('❌ Falha ao criar empresa no resgate:', errEmp);
+            setError(`Erro ao criar empresa (Resgate): ${errEmp.message}. Verifique as permissões RLS da tabela 'empresas'.`);
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('Falha no resgate automático:', e);
+          setError(`Falha inesperada no resgate de empresa: ${e.message}`);
         }
 
         if (retries > 0) {
