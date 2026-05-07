@@ -316,7 +316,14 @@ export function useAssets() {
     if (!currentEmpresaId) {
       console.error('❌ Falha ao adicionar ativo: Empresa ID não encontrado.');
       setError('Aguarde a sincronização da empresa.');
-      return;
+      return false;
+    }
+
+    // Validação de Unique Tag
+    const tagExists = assets.some(a => a.tag.trim().toLowerCase() === asset.tag.trim().toLowerCase());
+    if (tagExists) {
+      setError(`A Tag de Patrimônio "${asset.tag}" já está em uso por outro ativo.`);
+      return false;
     }
 
     let categoryId = asset.categoria_id;
@@ -362,7 +369,7 @@ export function useAssets() {
       if (insertError) {
         console.error('❌ Erro Supabase ao adicionar ativo:', insertError);
         setError(`Erro ao salvar ativo: ${insertError.message}`);
-        return;
+        return false;
       }
 
       if (data) {
@@ -392,10 +399,13 @@ export function useAssets() {
         };
         setAssets(prev => [mapped, ...prev]);
         setError(null);
+        return true;
       }
+      return false;
     } catch (err: any) {
       console.error('💥 Exceção ao adicionar ativo:', err);
       setError(`Erro inesperado: ${err.message}`);
+      return false;
     }
   };
 
@@ -403,7 +413,15 @@ export function useAssets() {
     setError(null);
     const updateData: any = {};
     if (updates.name !== undefined) updateData.name = updates.name;
-    if (updates.tag !== undefined) updateData.tag = updates.tag;
+    
+    if (updates.tag !== undefined) {
+      const tagExists = assets.some(a => a.id !== id && a.tag.trim().toLowerCase() === updates.tag?.trim().toLowerCase());
+      if (tagExists) {
+        setError(`A Tag de Patrimônio "${updates.tag}" já está em uso por outro ativo.`);
+        return false;
+      }
+      updateData.tag = updates.tag;
+    }
     
     // Mapeamento de categoria -> category_id (paridade com addAsset)
     if (updates.categoria !== undefined) {
@@ -449,9 +467,11 @@ export function useAssets() {
     if (error) {
       console.error('❌ Erro ao atualizar ativo:', error);
       setError(`Erro ao atualizar no banco: ${error.message}`);
+      return false;
     } else {
       console.log('✅ Ativo atualizado com sucesso no Supabase');
       setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+      return true;
     }
   };
 
@@ -484,7 +504,33 @@ export function useAssets() {
 
     if (!currentEmpresaId) return;
 
-    const prepared = newAssets.map(asset => {
+    // Filtrar duplicados no próprio lote e contra os já existentes
+    const existingTags = new Set(assets.map(a => a.tag.trim().toLowerCase()));
+    const seenInBatch = new Set<string>();
+    const uniqueToInsert: typeof newAssets = [];
+    const duplicates: string[] = [];
+
+    for (const asset of newAssets) {
+      const normalizedTag = asset.tag.trim().toLowerCase();
+      if (existingTags.has(normalizedTag) || seenInBatch.has(normalizedTag)) {
+        duplicates.push(asset.tag);
+      } else {
+        seenInBatch.add(normalizedTag);
+        uniqueToInsert.push(asset);
+      }
+    }
+
+    if (uniqueToInsert.length === 0) {
+      setError(`Nenhum ativo novo importado. Todas as tags (${duplicates.join(', ')}) já existem no sistema.`);
+      return false;
+    }
+
+    if (duplicates.length > 0) {
+      console.warn('Ativos ignorados por duplicidade de tag:', duplicates);
+      setError(`${uniqueToInsert.length} ativos importados. ${duplicates.length} itens foram ignorados pois as Tags de Patrimônio já existem.`);
+    }
+
+    const prepared = uniqueToInsert.map(asset => {
       let categoryId = asset.categoria_id;
       if (!categoryId) {
         const cat = categorias.find(c => c.name.trim().toLowerCase() === (asset.categoria || '').trim().toLowerCase());
@@ -525,7 +571,9 @@ export function useAssets() {
     } else if (data) {
       console.log(`✅ Bulk insert concluído: ${data.length} ativos.`);
       fetchAll();
+      return data.length;
     }
+    return 0;
   };
 
   const startAudit = async (auditorName: string) => {

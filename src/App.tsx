@@ -372,7 +372,6 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
 
       if (mappedAssets.length > 0) {
         onBulkUpload(mappedAssets);
-        alert(`${mappedAssets.length} ativos importados com sucesso!`);
       }
     };
     reader.readAsBinaryString(file);
@@ -1995,18 +1994,18 @@ export default function App() {
     };
 
     if (editingAsset) {
-      updateAsset(editingAsset.id, data);
-      setIsModalOpen(false);
-      setEditingAsset(null);
+      updateAsset(editingAsset.id, data).then((success) => {
+        if (success) {
+          setIsModalOpen(false);
+          setEditingAsset(null);
+        }
+      });
     } else {
-      // Usamos async/await aqui para que possamos manter o modal aberto em caso de erro, se quisermos.
-      // Ou pelo menos garantir que o erro seja capturado.
-      addAsset(data).then(() => {
-        // Se após o addAsset o erro estiver limpo, fechamos
-        // Mas como o addAsset define o erro de forma assíncrona no hook, 
-        // é melhor fechar apenas se não houver erro imediato ou deixar o erro global aparecer.
-        setIsModalOpen(false);
-        setEditingAsset(null);
+      addAsset(data).then((success) => {
+        if (success) {
+          setIsModalOpen(false);
+          setEditingAsset(null);
+        }
       });
     }
   };
@@ -2331,9 +2330,15 @@ export default function App() {
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => { setIsModalOpen(false); setEditingAsset(null); }} 
+        onClose={() => { setIsModalOpen(false); setEditingAsset(null); setCategoriaErro(null); }} 
         title={editingAsset ? "Editar Ativo" : "Cadastrar Ativo"}
       >
+        {categoriaErro && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-xs flex items-start gap-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>{categoriaErro}</span>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Ativo</label>
