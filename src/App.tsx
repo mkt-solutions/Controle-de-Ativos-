@@ -63,14 +63,44 @@ const AuthPage = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => 
     
     try {
       if (isRegister) {
-        // Registro simplificado: APENAS email e senha para evitar falhas de Trigger
+        // Registro 100% puro: Sem metadados, sem triggers.
+        console.log('🚀 Tentando cadastro simplificado...');
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email,
           password
         });
         
-        if (authError) throw authError;
-        if (authData.user) onAuthSuccess(authData.user);
+        if (authError) {
+          console.error('❌ Erro no SignUp:', authError);
+          
+          // RESGATE AUTOMÁTICO: Em erros de trigger/banco, o usuário MUITAS VEZES é criado no auth.users
+          // mas o Supabase retorna erro 500/Trigger. Tentamos logar imediatamente para resgatar a sessão.
+          if (
+            authError.message.toLowerCase().includes('database error') || 
+            authError.message.toLowerCase().includes('trigger') ||
+            authError.message.includes('500') ||
+            authError.message.toLowerCase().includes('already registered')
+          ) {
+            console.log('🔄 Erro de banco detectado. Tentando login de resgate...');
+            const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+            
+            if (loginData.user) {
+              console.log('✅ Usuário resgatado com sucesso via login direto.');
+              onAuthSuccess(loginData.user);
+              return;
+            }
+            // Se o login de resgate também falhar, aí sim lançamos o erro original
+            if (loginError) {
+               console.error('❌ Falha no resgate:', loginError);
+            }
+          }
+          
+          throw authError;
+        }
+        
+        if (authData.user) {
+          onAuthSuccess(authData.user);
+        }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -85,8 +115,8 @@ const AuthPage = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => 
       
       if (msg.toLowerCase().includes('user already registered')) {
         msg = "Este e-mail já está cadastrado. Tente entrar no sistema.";
-      } else if (msg.toLowerCase().includes('database error') || msg.toLowerCase().includes('trigger')) {
-        msg = "Erro crítico de banco: Remova o trigger 'on_auth_user_created' no Supabase Dashboard (SQL Editor) para habilitar cadastros.";
+      } else if (msg.toLowerCase().includes('database error') || msg.toLowerCase().includes('trigger') || msg.includes('500')) {
+        msg = "O Banco de Dados (Supabase) bloqueou o cadastro devido a um Gatilho (Trigger) ainda ativo.\n\nRESOLUÇÃO DEFINITIVA:\n1. Vá no SQL Editor do Supabase\n2. Execute este comando exatamente como está:\n\nDROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;\nDROP TRIGGER IF EXISTS tr_on_auth_user_created ON auth.users;\nDROP FUNCTION IF EXISTS handle_new_user() CASCADE;";
       } else if (msg.toLowerCase().includes('invalid login credentials')) {
         msg = "E-mail ou senha inválidos.";
       }
