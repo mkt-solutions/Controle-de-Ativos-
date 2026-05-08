@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -1243,7 +1243,13 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Status', key: 'status', width: 15 }
     ];
 
-    assetsWithMeta.forEach(a => {
+    const sortedAssets = [...assetsWithMeta].sort((a, b) => {
+      const filialA = a.filial_nome || 'Sede / Matriz';
+      const filialB = b.filial_nome || 'Sede / Matriz';
+      return filialA.localeCompare(filialB);
+    });
+
+    sortedAssets.forEach(a => {
       const cat = categorias.find(c => c.name === a.categoria);
       wsAtivos.addRow({
         id: a.id.slice(-6),
@@ -1279,7 +1285,7 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Valor Atual', key: 'current', width: 15 }
     ];
 
-    assetsWithMeta.forEach(a => {
+    sortedAssets.forEach(a => {
       const cat = categorias.find(c => c.name === a.categoria);
       const usefulLifeMonths = (cat?.usefulLifeYears || 5) * 12;
       const purchase = new Date(a.purchaseDate);
@@ -1313,22 +1319,36 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Data Última Verificação', key: 'date', width: 20 }
     ];
 
-    if (latestAudit) {
-      latestAudit.allAssetsSnapshot.forEach(item => {
-        const found = latestAudit.verifiedIds.includes(item.id);
+    const latestAuditsByFilial = new Map<string | null, AuditRecord>();
+    audits.filter(a => a.isFinalized).forEach(audit => {
+      const fid = audit.filial_id || null;
+      const existing = latestAuditsByFilial.get(fid);
+      if (!existing || new Date(audit.date).getTime() > new Date(existing.date).getTime()) {
+        latestAuditsByFilial.set(fid, audit);
+      }
+    });
+
+    const allLatestAuditItems: any[] = [];
+    latestAuditsByFilial.forEach((audit) => {
+      audit.allAssetsSnapshot.forEach(item => {
+        const found = audit.verifiedIds.includes(item.id);
         const originalAsset = assets.find(a => a.id === item.id);
-        
-        wsInv.addRow({
+        allLatestAuditItems.push({
           tag: item.tag,
           name: item.name,
           filial_nome: originalAsset?.filial_nome || 'Sede / Matriz',
           locExp: item.location,
           locActual: found ? item.location : 'NÃO LOCALIZADO',
           status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
-          date: new Date(latestAudit.date)
+          date: new Date(audit.date)
         });
       });
-    }
+    });
+
+    // Ordenar itens do inventário por filial
+    allLatestAuditItems.sort((a, b) => a.filial_nome.localeCompare(b.filial_nome)).forEach(row => {
+      wsInv.addRow(row);
+    });
 
     // Comum a todas as abas técnicas
     [wsAtivos, wsDepr, wsInv].forEach(ws => {
@@ -2463,6 +2483,15 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Redirecionar para configurações se a empresa ou o nome não existir
+  React.useEffect(() => {
+    if (isAuthenticated && !loading) {
+      if ((!empresaId || !empresaNome) && view !== 'configuracoes') {
+        setView('configuracoes');
+      }
+    }
+  }, [isAuthenticated, loading, empresaId, empresaNome, view]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
   };
@@ -2856,7 +2885,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {!empresaId ? (
+                {(!empresaId || !empresaNome) ? (
                   <div className="space-y-8">
                     <div className="p-6 bg-amber-50 border border-amber-100 rounded-3xl flex items-start gap-5">
                       <AlertTriangle className="text-amber-600 shrink-0 mt-1" size={24} />
@@ -2981,7 +3010,7 @@ NOTIFY pgrst, 'reload schema';`}
                     
                     <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100">
                       <h4 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
-                        <Map size={16} className="text-blue-600" /> Filiais e Unidades
+                        <MapIcon size={16} className="text-blue-600" /> Filiais e Unidades
                       </h4>
                       <div className="space-y-6">
                         <div className="space-y-2">
