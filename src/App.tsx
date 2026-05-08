@@ -2647,7 +2647,7 @@ export default function App() {
                 ) : (
                   <div className="space-y-6">
                     {/* SQL REPAIR SECTION FOR FILIAIS */}
-                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão'))) && (
+                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão') || categoriaErro.includes('cod_base_bem'))) && (
                       <div className="p-8 bg-amber-50 rounded-3xl border border-amber-200 animate-in fade-in slide-in-from-top-4">
                         <div className="flex items-start gap-4">
                           <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-200">
@@ -2655,8 +2655,8 @@ export default function App() {
                           </div>
                           <div className="space-y-4 flex-1">
                             <div>
-                              <h3 className="text-xl font-black text-amber-900 tracking-tight">Detectamos um erro de Permissão</h3>
-                              <p className="text-amber-700 text-sm font-bold mt-1">O Supabase bloqueou o acesso às filiais. Para resolver, execute o código abaixo no seu SQL Editor:</p>
+                              <h3 className="text-xl font-black text-amber-900 tracking-tight">Correção de Banco de Dados Necessária</h3>
+                              <p className="text-amber-700 text-sm font-bold mt-1">Detectamos colunas ou permissões faltando no seu Supabase. Para resolver, execute o código abaixo no seu SQL Editor:</p>
                             </div>
                             
                             <div className="relative group">
@@ -2676,8 +2676,12 @@ DROP POLICY IF EXISTS "permit_all" ON filiais;
 ALTER TABLE filiais ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "permit_all" ON filiais FOR ALL TO public USING (true) WITH CHECK (true);
 
+-- Atualização da tabela de ativos
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS cod_base_bem text;
 GRANT ALL ON assets TO authenticated;
+
+-- Recarregar cache do esquema
 NOTIFY pgrst, 'reload schema';`}
                               </pre>
                               <div className="absolute top-4 right-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800 px-2 py-1 rounded-lg">Clique para selecionar tudo</div>

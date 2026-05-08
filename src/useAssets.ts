@@ -278,8 +278,8 @@ export function useAssets() {
       }
     } catch (err: any) {
       console.error('Erro ao adicionar filial:', err);
-      if (err.code === '42501' || err.message.toLowerCase().includes('permission denied')) {
-        setError(`ERRO DE PERMISSÃO: O Supabase bloqueou a criação da filial. 
+      if (err.code === '42501' || err.message.toLowerCase().includes('permission denied') || err.message.toLowerCase().includes('cod_base_bem')) {
+        setError(`ERRO DE BANCO DE DADOS: O Supabase detectou colunas ou permissões faltando. 
         
 Para corrigir, copie e execute este código no SQL Editor do Supabase:
 
@@ -296,7 +296,9 @@ DROP POLICY IF EXISTS "total_access" ON filiais;
 ALTER TABLE filiais ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "total_access" ON filiais FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;`);
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS cod_base_bem text;
+NOTIFY pgrst, 'reload schema';`);
       } else {
         setError(`Erro ao adicionar filial: ${err.message}`);
       }
@@ -418,7 +420,13 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id
 
       if (insertError) {
         console.error('❌ Erro Supabase ao adicionar ativo:', insertError);
-        setError(`Erro ao salvar ativo: ${insertError.message}`);
+        if (insertError.message.includes('cod_base_bem') || insertError.message.includes('column') || insertError.code === '42703') {
+          setError(`ERRO DE BANCO DE DADOS: O Ativo não pôde ser salvo porque algumas colunas estão faltando no Supabase. 
+          
+Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no SQL Editor.`);
+        } else {
+          setError(`Erro ao salvar ativo: ${insertError.message}`);
+        }
         return false;
       }
 
