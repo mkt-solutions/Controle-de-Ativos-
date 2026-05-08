@@ -12,6 +12,43 @@ import { supabase } from './lib/supabase';
 import { cn, formatCurrency, formatDate } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
+// Utilitários de Áudio para o Scanner
+const playBeep = (type: 'success' | 'error' | 'neutral' = 'success') => {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    if (type === 'success') {
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Lá (A5)
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1);
+    } else if (type === 'error') {
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // Lá (A3)
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.2);
+    } else {
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // Lá (A4)
+      gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.1);
+    }
+  } catch (err) {
+    console.warn('Áudio não suportado:', err);
+  }
+};
+
 // --- Components ---
 
 const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick: () => void }) => (
@@ -833,6 +870,11 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                           ⚠️ {asset.inactiveReason}
                         </p>
                       )}
+                      {asset.status === 'Emprestado' && asset.assignedTo && (
+                        <p className="text-[10px] text-blue-600 mt-1 font-bold italic">
+                          👤 {asset.assignedTo}
+                        </p>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4 text-slate-500">{asset.categoria}</td>
@@ -864,6 +906,11 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Motivo Inativo</span>
                         <span className="text-xs text-red-600 font-medium">{asset.inactiveReason || 'Não informado'}</span>
+                      </div>
+                    ) : asset.status === 'Emprestado' ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Emprestado para</span>
+                        <span className="text-xs text-blue-600 font-bold">{asset.assignedTo || 'Não informado'}</span>
                       </div>
                     ) : asset.status !== 'Ativo' ? (
                       <div className="flex flex-col gap-1">
@@ -990,7 +1037,15 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
   );
 };
 
-const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categorias: Categoria[], audits: AuditRecord[] }) => {
+const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { assets: Asset[], categorias: Categoria[], audits: AuditRecord[], filiais: Filial[] }) => {
+  const [selectedFilial, setSelectedFilial] = React.useState<string>('all');
+
+  const assets = React.useMemo(() => {
+    if (selectedFilial === 'all') return allAssets;
+    if (selectedFilial === 'hq') return allAssets.filter(a => !a.filial_id);
+    return allAssets.filter(a => a.filial_id === selectedFilial);
+  }, [allAssets, selectedFilial]);
+
   const calculateDepreciation = (asset: Asset) => {
     const originalValue = asset.value;
     const purchaseDate = asset.purchaseDate;
@@ -1085,7 +1140,13 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
   })).filter(c => c.value > 0).sort((a, b) => b.value - a.value);
 
   // 8. Inventário
-  const latestAudit = audits.filter(a => a.isFinalized).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  const filteredAudits = audits.filter(a => {
+    if (selectedFilial === 'all') return true;
+    if (selectedFilial === 'hq') return !a.filial_id;
+    return a.filial_id === selectedFilial;
+  });
+
+  const latestAudit = filteredAudits.filter(a => a.isFinalized).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
   const auditData = latestAudit ? [
     { name: 'Encontrados', value: latestAudit.verifiedIds.length },
     { name: 'Não Encontrados', value: latestAudit.allAssetsSnapshot.length - latestAudit.verifiedIds.length }
@@ -1337,6 +1398,47 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
           <Download size={18} />
           Exportar Contabilidade
         </button>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setSelectedFilial('all')}
+            className={cn(
+              "px-4 py-2 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
+              selectedFilial === 'all' 
+                ? "bg-slate-800 text-white shadow-md" 
+                : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+            )}
+          >
+            Toda Empresa
+          </button>
+          <button
+            onClick={() => setSelectedFilial('hq')}
+            className={cn(
+              "px-4 py-2 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
+              selectedFilial === 'hq' 
+                ? "bg-indigo-600 text-white shadow-md" 
+                : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+            )}
+          >
+            Sede
+          </button>
+          {filiais.map(f => (
+            <button
+              key={f.id}
+              onClick={() => setSelectedFilial(f.id)}
+              className={cn(
+                "px-4 py-2 rounded-lg text-xs font-bold transition-all uppercase tracking-wider",
+                selectedFilial === f.id 
+                  ? "bg-blue-600 text-white shadow-md" 
+                  : "bg-white text-slate-500 border border-slate-200 hover:border-slate-300"
+              )}
+            >
+              {f.nome}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -1890,8 +1992,13 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
 
     if (asset) {
       if (!activeAudit.verifiedIds.includes(asset.id)) {
+        playBeep('success');
         toggleAssetAudit(activeAudit.id, asset.id);
+      } else {
+        playBeep('neutral');
       }
+    } else {
+      playBeep('error');
     }
   }, [activeAudit, toggleAssetAudit]);
 
@@ -1916,6 +2023,7 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
       { header: 'Localizado', key: 'status', width: 20 },
       { header: 'Item', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
+      { header: 'Unidade / Filial', key: 'filial', width: 25 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data da Leitura', key: 'date', width: 20 },
       { header: 'Responsavel', key: 'auditor', width: 20 }
@@ -1928,6 +2036,7 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
         status: isVerified ? 'LOCALIZADO' : 'NAO LOCALIZADO',
         name: item.name,
         categoria: item.categoria,
+        filial: audit.filial_id ? `Filial: ${audit.filial_nome}` : (audit.filial_nome || 'Sede'),
         value: item.value,
         date: formatDate(audit.date),
         auditor: audit.auditorName || 'N/A'
@@ -2013,7 +2122,9 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
                 <h3 className="text-base lg:text-lg font-bold text-slate-800 truncate">Controle: {activeAudit.auditorName}</h3>
                 <p className="text-[10px] lg:text-xs text-slate-500">
                   Iniciada em {formatDate(activeAudit.date)} 
-                  {activeAudit.filial_nome && <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase text-[9px]">{activeAudit.filial_nome}</span>}
+                  <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase text-[9px]">
+                    {activeAudit.filial_id ? `Filial: ${activeAudit.filial_nome}` : (activeAudit.filial_nome || 'Sede')}
+                  </span>
                 </p>
               </div>
             </div>
@@ -2172,7 +2283,10 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
                     <div>
                       <p className="text-xs font-bold text-slate-800">{formatDate(audit.date)}</p>
                       <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">
-                        Resp: {audit.auditorName} {audit.filial_nome && `| ${audit.filial_nome}`}
+                        Resp: {audit.auditorName}
+                      </p>
+                      <p className="text-[10px] text-blue-600 uppercase font-bold tracking-tighter">
+                        {audit.filial_id ? `Filial: ${audit.filial_nome}` : (audit.filial_nome || 'Sede')}
                       </p>
                     </div>
                   </div>
@@ -2440,6 +2554,7 @@ export default function App() {
       warrantyExpirationDate: formData.get('warrantyExpirationDate') as string || '',
       maintenanceNotes,
       maintenanceValue: status === 'Em Manutenção' ? maintenanceValue : 0,
+      assignedTo: formData.get('assignedTo') as string || '',
       inactiveReason: formData.get('inactiveReason') as string || '',
       maintenanceHistory,
     };
@@ -2703,7 +2818,7 @@ export default function App() {
               onBulkUpload={bulkAddAssets}
             />
           )}
-          {view === 'reports' && <ReportsView assets={assets} categorias={categorias} audits={audits} />}
+          {view === 'reports' && <ReportsView assets={assets} categorias={categorias} audits={audits} filiais={filiais} />}
           {view === 'categorias' && (
             <CategoriasView 
               categorias={categorias} 
@@ -3251,6 +3366,23 @@ NOTIFY pgrst, 'reload schema';`}
                     </div>
                   </div>
                 )}
+              </motion.div>
+            )}
+            {selectedStatus === 'Emprestado' && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Emprestado para</label>
+                <input 
+                  name="assignedTo" 
+                  defaultValue={editingAsset?.assignedTo} 
+                  required={selectedStatus === 'Emprestado'}
+                  placeholder="Ex: Nome do Funcionário ou Departamento"
+                  className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                />
               </motion.div>
             )}
             {selectedStatus === 'Inativo' && (

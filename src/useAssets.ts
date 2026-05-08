@@ -126,13 +126,17 @@ export function useAssets() {
         }));
       }
       if (auditRes.data) {
-        setAudits(auditRes.data.map((audit: any) => ({
-          ...audit,
-          auditorName: audit.auditor_name,
-          verifiedIds: audit.verified_ids,
-          allAssetsSnapshot: audit.all_assets_snapshot,
-          isFinalized: audit.is_finalized
-        })));
+        setAudits(auditRes.data.map((audit: any) => {
+          const filialObj = audit.filial_id ? (filialRes.data || []).find((f: any) => f.id === audit.filial_id) : null;
+          return {
+            ...audit,
+            auditorName: audit.auditor_name,
+            verifiedIds: audit.verified_ids || [],
+            allAssetsSnapshot: audit.all_assets_snapshot,
+            isFinalized: audit.is_finalized,
+            filial_nome: audit.filial_id ? (filialObj?.nome || 'Filial') : 'Sede / Matriz'
+          };
+        }));
       }
       setLoading(false);
     } catch (error) {
