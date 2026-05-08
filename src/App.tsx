@@ -7,7 +7,7 @@ import { saveAs } from 'file-saver';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
-import { Asset, AssetStatus, CategoriaAtivo, Categoria, AuditRecord } from './types';
+import { Asset, AssetStatus, CategoriaAtivo, Categoria, AuditRecord, Filial } from './types';
 import { supabase } from './lib/supabase';
 import { cn, formatCurrency, formatDate } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -883,7 +883,7 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
                               <p className="text-xs text-slate-800">{asset.codBaseBem || 'Não informado'}</p>
                             </div>
                             <div>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">Filial</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Filial / Unidade</p>
                               <p className="text-xs text-slate-800">{asset.filial_nome || 'Sede / Matriz'}</p>
                             </div>
                             <div>
@@ -1814,10 +1814,11 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
   );
 };
 
-const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit }: { audits: AuditRecord[], startAudit: (name: string) => void, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void }) => {
+const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, error, clearError }: { audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, error: string | null, clearError: () => void }) => {
   const activeAudit = audits.find(a => !a.isFinalized);
   const [showStartModal, setShowStartModal] = React.useState(false);
   const [auditorName, setAuditorName] = React.useState('');
+  const [selectedFilial, setSelectedFilial] = React.useState('TOTAL');
   const [isScannerOpen, setIsScannerOpen] = React.useState(false);
 
   const handleScan = React.useCallback((decodedText: string) => {
@@ -1838,12 +1839,15 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
     }
   }, [activeAudit, toggleAssetAudit]);
 
-  const handleStart = (e: React.FormEvent) => {
+  const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (auditorName.trim()) {
-      startAudit(auditorName.trim());
-      setAuditorName('');
-      setShowStartModal(false);
+      const success = await startAudit(auditorName.trim(), selectedFilial);
+      if (success) {
+        setAuditorName('');
+        setSelectedFilial('TOTAL');
+        setShowStartModal(false);
+      }
     }
   };
 
@@ -1930,6 +1934,18 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {error && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-start gap-3 text-left">
+          <AlertTriangle className="text-red-500 mt-0.5 shrink-0" size={18} />
+          <div className="flex-1">
+            <p className="text-sm text-red-800 font-bold">Aviso do Sistema</p>
+            <p className="text-xs text-red-700 leading-relaxed font-medium mt-0.5">{error}</p>
+          </div>
+          <button onClick={clearError} className="p-1 hover:bg-red-100 rounded">
+            <X size={14} className="text-red-800" />
+          </button>
+        </div>
+      )}
       {activeAudit ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-4 lg:p-6 border-b border-slate-100 bg-blue-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1939,7 +1955,10 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
               </div>
               <div className="min-w-0">
                 <h3 className="text-base lg:text-lg font-bold text-slate-800 truncate">Controle: {activeAudit.auditorName}</h3>
-                <p className="text-[10px] lg:text-xs text-slate-500">Iniciada em {formatDate(activeAudit.date)}</p>
+                <p className="text-[10px] lg:text-xs text-slate-500">
+                  Iniciada em {formatDate(activeAudit.date)} 
+                  {activeAudit.filial_nome && <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase text-[9px]">{activeAudit.filial_nome}</span>}
+                </p>
               </div>
             </div>
             
@@ -2096,7 +2115,9 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-800">{formatDate(audit.date)}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Resp: {audit.auditorName}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">
+                        Resp: {audit.auditorName} {audit.filial_nome && `| ${audit.filial_nome}`}
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
@@ -2147,26 +2168,47 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
       <Modal 
         isOpen={showStartModal} 
         onClose={() => setShowStartModal(false)}
-        title="Nome do Auditor"
+        title="Iniciar Verificação"
       >
-        <form onSubmit={handleStart} className="space-y-4">
-          <p className="text-sm text-slate-500">Informe o nome do colaborador que realizará a contagem física dos ativos.</p>
+        <form onSubmit={handleStart} className="space-y-5">
+          <p className="text-sm text-slate-500 font-medium">Informe os dados abaixo para começar a contagem física dos ativos.</p>
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome Completo</label>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Auditor / Responsável</label>
             <input 
               autoFocus
               value={auditorName}
               onChange={(e) => setAuditorName(e.target.value)}
               required
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              placeholder="Ex: João Silva de Souza"
+              placeholder="Ex: João Silva"
             />
           </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Filial / Unidade de Leitura</label>
+            <select 
+              value={selectedFilial}
+              onChange={(e) => setSelectedFilial(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+            >
+              <option value="TOTAL">Toda a Empresa (Geral)</option>
+              <option value="MATRIZ">Sede / Matriz</option>
+              {filiais.map(f => (
+                <option key={f.id} value={f.id}>{f.nome}</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[9px] text-slate-400 font-medium px-0.5 italic">
+              {selectedFilial === 'TOTAL' ? 'Serão listados TODOS os ativos cadastrados.' : 
+               selectedFilial === 'MATRIZ' ? 'Serão listados apenas ativos sem filial vinculada.' : 
+               'Serão listados apenas os ativos vinculados a esta unidade.'}
+            </p>
+          </div>
+
           <button 
             type="submit"
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 uppercase tracking-wide"
+            className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-black text-sm shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
           >
-            Começar Verificação <ArrowUpRight size={18} />
+            Começar Agora <Check size={18} />
           </button>
         </form>
       </Modal>
@@ -2617,7 +2659,18 @@ export default function App() {
               loading={loading}
             />
           )}
-          {view === 'audit' && <AuditView audits={audits} startAudit={startAudit} toggleAssetAudit={toggleAssetAudit} finalizeAudit={finalizeAudit} deleteAudit={deleteAudit} />}
+          {view === 'audit' && (
+            <AuditView 
+              audits={audits} 
+              filiais={filiais}
+              startAudit={startAudit} 
+              toggleAssetAudit={toggleAssetAudit} 
+              finalizeAudit={finalizeAudit} 
+              deleteAudit={deleteAudit} 
+              error={categoriaErro}
+              clearError={() => setCategoriaErro(null)}
+            />
+          )}
           {view === 'configuracoes' && (
             <div className="max-w-2xl mx-auto py-8">
               <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-xl shadow-slate-200/50">
@@ -2646,8 +2699,8 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* SQL REPAIR SECTION FOR FILIAIS */}
-                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão') || categoriaErro.includes('cod_base_bem'))) && (
+                    {/* SQL REPAIR SECTION FOR FILIAIS AND AUDITS */}
+                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão') || categoriaErro.includes('cod_base_bem') || categoriaErro.includes('audits') || categoriaErro.includes('conferência'))) && (
                       <div className="p-8 bg-amber-50 rounded-3xl border border-amber-200 animate-in fade-in slide-in-from-top-4">
                         <div className="flex items-start gap-4">
                           <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-200">
@@ -2679,7 +2732,9 @@ CREATE POLICY "permit_all" ON filiais FOR ALL TO public USING (true) WITH CHECK 
 -- Atualização da tabela de ativos
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS cod_base_bem text;
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
 GRANT ALL ON assets TO authenticated;
+GRANT ALL ON audits TO authenticated;
 
 -- Recarregar cache do esquema
 NOTIFY pgrst, 'reload schema';`}

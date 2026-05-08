@@ -433,13 +433,16 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       if (data) {
         console.log('✅ Ativo adicionado com sucesso:', data);
         
-        // Mapeamento manual do nome da categoria usando o estado local
+        // Mapeamento manual de nomes usando o estado local
         const catLocal = categorias.find(c => c.id === data.category_id || c.id === (data as any).categoria_id);
+        const filialLocal = filiais.find(f => f.id === data.filial_id);
         
         const mapped = {
           ...data,
           categoria: catLocal?.name || 'Sem Categoria',
           categoria_id: data.category_id || (data as any).categoria_id,
+          filial_id: data.filial_id,
+          filial_nome: filialLocal?.nome,
           purchaseDate: data.purchase_date,
           value: data.value,
           assignedTo: data.assigned_to,
@@ -553,7 +556,25 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       return false;
     } else {
       console.log('✅ Ativo atualizado com sucesso no Supabase');
-      setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a));
+      
+      // Recalcular nomes baseados nos IDs para manter o estado local sincronizado
+      const filialLocal = updates.filial_id ? filiais.find(f => f.id === updates.filial_id) : null;
+      const catLocal = updates.categoria || updates.categoria_id ? 
+        categorias.find(c => c.id === updates.categoria_id || c.name === updates.categoria) : null;
+
+      setAssets(prev => prev.map(a => {
+        if (a.id === id) {
+          const updatedAsset = { ...a, ...updates, updatedAt: new Date().toISOString() };
+          if (updates.filial_id !== undefined) {
+            updatedAsset.filial_nome = filialLocal?.nome || (updates.filial_id === null ? 'Sede / Matriz' : a.filial_nome);
+          }
+          if (catLocal) {
+            updatedAsset.categoria = catLocal.name;
+          }
+          return updatedAsset;
+        }
+        return a;
+      }));
       return true;
     }
   };
@@ -661,12 +682,30 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     return 0;
   };
 
-  const startAudit = async (auditorName: string) => {
+  const startAudit = async (auditorName: string, filterType: string = 'TOTAL') => {
     if (!empresaId) return;
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    const allAssetsSnapshot = assets.map(a => ({ 
+    // Filtra os ativos baseados na seleção
+    let filteredAssets = assets;
+    let filial_id_to_save: string | null = null;
+    let filial_nome_display: string = 'Geral / Toda Empresa';
+
+    if (filterType === 'MATRIZ') {
+      filteredAssets = assets.filter(a => !a.filial_id);
+      filial_nome_display = 'Sede / Matriz';
+      // No banco vamos marcar como null para representar a sede se necessário, 
+      // ou usar um marcador se a coluna for obrigatória e tivermos IDs.
+      // Aqui, 'null' na coluna filial_id geralmente significa sede.
+    } else if (filterType !== 'TOTAL' && filterType) {
+      filteredAssets = assets.filter(a => a.filial_id === filterType);
+      filial_id_to_save = filterType;
+      const filialFound = filiais.find(f => f.id === filterType);
+      filial_nome_display = filialFound?.nome || 'Filial';
+    }
+
+    const allAssetsSnapshot = filteredAssets.map(a => ({ 
       id: a.id, 
       name: a.name, 
       tag: a.tag,
@@ -675,14 +714,15 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       location: a.location
     }));
 
-    const newAuditData = {
+    const newAuditData: any = {
       date: new Date().toISOString(),
       auditor_name: auditorName,
       auditor_user_id: user?.id,
       verified_ids: [],
       all_assets_snapshot: allAssetsSnapshot,
       is_finalized: false,
-      empresa_id: empresaId
+      empresa_id: empresaId,
+      filial_id: filial_id_to_save
     };
 
     const { data, error } = await supabase
@@ -691,16 +731,31 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       .select()
       .single();
 
+    if (error) {
+      console.error('❌ Erro ao iniciar verificação:', error);
+      if (error.message.includes('column "filial_id"') || error.code === '42703') {
+        setError('ERRO DE BANCO: A tabela de conferência (audits) precisa ser atualizada com a coluna "filial_id". Use o rádio de Configurações para corrigir.');
+      } else {
+        setError(`Erro ao iniciar verificação: ${error.message}`);
+      }
+      return false;
+    }
+
     if (data) {
+      const filialObj = filial_id_to_save ? filiais.find(f => f.id === filial_id_to_save) : null;
       const mapped = {
         ...data,
         auditorName: data.auditor_name,
-        verifiedIds: data.verified_ids,
+        verifiedIds: data.verified_ids || [],
         allAssetsSnapshot: data.all_assets_snapshot,
-        isFinalized: data.is_finalized
+        isFinalized: data.is_finalized,
+        filial_id: data.filial_id,
+        filial_nome: filial_nome_display
       };
       setAudits(prev => [mapped, ...prev]);
+      return true;
     }
+    return false;
   };
 
   const toggleAssetAudit = async (auditId: string, assetId: string) => {

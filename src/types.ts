@@ -67,6 +67,8 @@ export interface AuditRecord {
   allAssetsSnapshot: { id: string, name: string, tag: string, categoria: string, value: number, location: string }[];
   isFinalized: boolean;
   empresa_id: string;
+  filial_id?: string;
+  filial_nome?: string;
 }
 
 export interface AssetStats {
