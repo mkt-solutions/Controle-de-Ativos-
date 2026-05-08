@@ -577,7 +577,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onAlertsClick, onViewAll }: 
   );
 };
 
-const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categorias: Categoria[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
+const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDelete, onEdit, onBulkUpload }: { assets: Asset[], categorias: Categoria[], filiais: Filial[], initialStatusFilter?: string, onDelete: (id: string) => void, onEdit: (a: Asset) => void, onBulkUpload: (assets: any[]) => void }) => {
   const [search, setSearch] = React.useState('');
   const [filterCategoria, setFilterCategoria] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>(initialStatusFilter || 'all');
@@ -591,24 +591,43 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
     const reader = new FileReader();
     reader.onload = (evt) => {
       const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wb = XLSX.read(bstr, { type: 'binary', cellDates: true, cellNF: false, cellText: false });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data: any[] = XLSX.utils.sheet_to_json(ws);
+      const data: any[] = XLSX.utils.sheet_to_json(ws, { dateNF: 'YYYY-MM-DD' });
       
-      const mappedAssets = data.map(item => ({
-        name: item.Nome || item.name || '',
-        tag: String(item['Tag de Patrimônio'] || item.Patrimonio || item.tag || ''),
-        categoria: (item.Categoria || item.categoria || item.category || 'Outros') as CategoriaAtivo,
-        status: 'Ativo' as AssetStatus,
-        value: Number(item.Valor || item.value || 0),
-        purchaseDate: item['Data de Compra'] || item.purchaseDate || new Date().toISOString().split('T')[0],
-        location: item.Localizacao || item.location || 'Nao Informado',
-        maintenanceHistory: [],
-        hasPreventiveMaintenance: false,
-        maintenanceIntervalMonths: 0,
-        hasWarranty: false,
-      })).filter(a => a.name && a.tag);
+      const mappedAssets = data.map(item => {
+        const filialName = item.Filial || item.filial || item.Unidade || '';
+        const filialObj = filiais.find(f => f.nome.trim().toLowerCase() === String(filialName).trim().toLowerCase());
+        
+        // Trata data de compra se for objeto Date ou string de data do Excel
+        let pDate = item['Data de Compra'] || item.purchaseDate;
+        if (pDate instanceof Date) {
+          pDate = pDate.toISOString().split('T')[0];
+        } else if (typeof pDate === 'number') {
+          // Caso ainda venha como número serial do Excel
+          const date = new Date(Math.round((pDate - 25569) * 86400 * 1000));
+          pDate = date.toISOString().split('T')[0];
+        } else if (!pDate) {
+          pDate = new Date().toISOString().split('T')[0];
+        }
+
+        return {
+          name: item.Nome || item.name || '',
+          tag: String(item['Tag de Patrimônio'] || item.Patrimonio || item.tag || ''),
+          categoria: (item.Categoria || item.categoria || item.category || 'Outros') as CategoriaAtivo,
+          status: 'Ativo' as AssetStatus,
+          value: Number(item.Valor || item.value || 0),
+          purchaseDate: pDate,
+          location: item.Localizacao || item.location || 'Nao Informado',
+          codBaseBem: item['Código Base Bem'] || item.cod_base_bem || item.codBaseBem || '',
+          filial_id: filialObj?.id || null,
+          maintenanceHistory: [],
+          hasPreventiveMaintenance: false,
+          maintenanceIntervalMonths: 0,
+          hasWarranty: false,
+        };
+      }).filter(a => a.name && a.tag);
 
       if (mappedAssets.length > 0) {
         onBulkUpload(mappedAssets);
@@ -633,6 +652,8 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
       { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
+      { header: 'Código Base Bem', key: 'codBaseBem', width: 20 },
+      { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Localizacao', key: 'location', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
@@ -642,14 +663,16 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
     // Formatar coluna A como texto para suportar zeros à esquerda (ex: 000001)
     worksheet.getColumn(1).numFmt = '@';
     
-    // Formatar coluna G como Data (DD/MM/YYYY)
-    worksheet.getColumn(7).numFmt = 'DD/MM/YYYY';
+    // Formatar coluna I como Data (DD/MM/YYYY)
+    worksheet.getColumn(9).numFmt = 'DD/MM/YYYY';
 
     // Add an example row as instruction
     worksheet.addRow({
       tag: '000001',
       name: 'Exemplo de Computador',
       categoria: 'Computadores',
+      codBaseBem: 'CP-001X',
+      filial_nome: filiais.length > 0 ? filiais[0].nome : 'Sede / Matriz',
       location: 'Escritório Central',
       status: 'Ativo',
       value: 3500.00,
@@ -677,6 +700,8 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
       { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
+      { header: 'Código Base Bem', key: 'codBaseBem', width: 20 },
+      { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data de Compra', key: 'purchaseDate', width: 15 },
@@ -685,14 +710,16 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
 
     // Formatar coluna A como texto
     worksheet.getColumn(1).numFmt = '@';
-    // Formatar coluna F como Data
-    worksheet.getColumn(6).numFmt = 'DD/MM/YYYY';
+    // Formatar coluna H como Data
+    worksheet.getColumn(8).numFmt = 'DD/MM/YYYY';
 
     filtered.forEach(a => {
       worksheet.addRow({
         tag: a.tag,
         name: a.name,
         categoria: a.categoria,
+        codBaseBem: a.codBaseBem,
+        filial_nome: a.filial_nome || 'Sede / Matriz',
         status: a.status,
         value: a.value,
         purchaseDate: new Date(a.purchaseDate),
@@ -1114,11 +1141,26 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
 
     // Styling Resumo
     wsResumo.getRow(1).font = { bold: true, size: 14 };
-    [4, 10, 16].forEach(rowIdx => wsResumo.getRow(rowIdx).font = { bold: true });
     
-    wsResumo.getColumn(2).numFmt = '"R$ "#,##0.00';
-    // Fix non-currency numbers in Column 2
-    [2, 5].forEach(rowIdx => wsResumo.getCell(`B${rowIdx}`).numFmt = '0');
+    // Identificar linhas de cabeçalho para negrito
+    wsResumo.eachRow((row, rowNumber) => {
+      const desc = row.getCell(1).value;
+      if (typeof desc === 'string' && (desc.includes('RELATÓRIO') || desc.includes('TOTAIS') || desc.includes('ATIVOS POR'))) {
+        row.font = { bold: true };
+      }
+      
+      // Formatação numérica inteligente na coluna B
+      const val = row.getCell(2).value;
+      if (rowNumber > 1 && val !== null && val !== '') {
+        if (typeof desc === 'string' && desc.toLowerCase().includes('valor')) {
+          row.getCell(2).numFmt = '"R$ "#,##0.00';
+        } else if (typeof desc === 'string' && desc.toLowerCase().includes('depreciação')) {
+          row.getCell(2).numFmt = '"R$ "#,##0.00';
+        } else if (typeof val === 'number') {
+          row.getCell(2).numFmt = '#,##0'; // Formato de número inteiro
+        }
+      }
+    });
 
     // 2. Aba: Ativos
     const wsAtivos = workbook.addWorksheet('Ativos');
@@ -1126,7 +1168,9 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
       { header: 'ID do Ativo', key: 'id', width: 10 },
       { header: 'Nome do Ativo', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
-      { header: 'Número Patrimônio', key: 'tag', width: 15 },
+      { header: 'Patrimônio', key: 'tag', width: 15 },
+      { header: 'Cód. Base Bem', key: 'codBaseBem', width: 20 },
+      { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Localização', key: 'location', width: 20 },
       { header: 'Responsável', key: 'auditor', width: 20 },
       { header: 'Data Compra', key: 'purchaseDate', width: 15 },
@@ -1145,6 +1189,8 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
         name: a.name,
         categoria: a.categoria,
         tag: a.tag,
+        codBaseBem: a.codBaseBem || '-',
+        filial_nome: a.filial_nome || 'Sede / Matriz',
         location: a.location,
         auditor: '-',
         purchaseDate: new Date(a.purchaseDate),
@@ -1160,7 +1206,9 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
     // 3. Aba: Depreciação
     const wsDepr = workbook.addWorksheet('Depreciação');
     wsDepr.columns = [
+      { header: 'Patrimônio', key: 'tag', width: 15 },
       { header: 'Nome do Ativo', key: 'name', width: 30 },
+      { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Valor Original', key: 'value', width: 15 },
       { header: 'Valor Residual', key: 'residual', width: 15 },
       { header: 'Vida Útil (Anos)', key: 'usefulLife', width: 15 },
@@ -1179,7 +1227,9 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
       const monthlyRate = a.value / usefulLifeMonths;
 
       wsDepr.addRow({
+        tag: a.tag,
         name: a.name,
+        filial_nome: a.filial_nome || 'Sede / Matriz',
         value: a.value,
         residual: 0,
         usefulLife: cat?.usefulLifeYears || 0,
@@ -1193,7 +1243,9 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
     // 4. Aba: Inventário
     const wsInv = workbook.addWorksheet('Inventário');
     wsInv.columns = [
+      { header: 'Patrimônio', key: 'tag', width: 15 },
       { header: 'Nome do Ativo', key: 'name', width: 30 },
+      { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Localização Esperada', key: 'locExp', width: 25 },
       { header: 'Localização Atual', key: 'locActual', width: 25 },
       { header: 'Status Conferência', key: 'status', width: 20 },
@@ -1203,8 +1255,12 @@ const ReportsView = ({ assets, categorias, audits }: { assets: Asset[], categori
     if (latestAudit) {
       latestAudit.allAssetsSnapshot.forEach(item => {
         const found = latestAudit.verifiedIds.includes(item.id);
+        const originalAsset = assets.find(a => a.id === item.id);
+        
         wsInv.addRow({
+          tag: item.tag,
           name: item.name,
+          filial_nome: originalAsset?.filial_nome || 'Sede / Matriz',
           locExp: item.location,
           locActual: found ? item.location : 'NÃO LOCALIZADO',
           status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
@@ -2640,6 +2696,7 @@ export default function App() {
             <AssetListView 
               assets={assets.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.tag.toLowerCase().includes(searchTerm.toLowerCase()))} 
               categorias={categorias}
+              filiais={filiais}
               initialStatusFilter={initialListStatus}
               onDelete={deleteAsset} 
               onEdit={handleEdit} 
