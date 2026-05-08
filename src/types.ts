@@ -21,12 +21,21 @@ export interface MaintenanceSession {
   notes: string;
 }
 
+export interface Filial {
+  id: string;
+  nome: string;
+  empresa_id: string;
+  createdAt: string;
+}
+
 export interface Asset {
   id: string;
   name: string;
   tag: string; // Patrimônio ID
   categoria: string; // Transformed from nested join or just label
   categoria_id?: string;
+  filial_id?: string;
+  filial_nome?: string;
   status: AssetStatus;
   purchaseDate: string;
   value: number;
@@ -43,6 +52,7 @@ export interface Asset {
   hasWarranty?: boolean;
   warrantyExpirationDate?: string;
   description?: string;
+  codBaseBem?: string;
   empresa_id: string;
   createdAt: string;
   updatedAt: string;

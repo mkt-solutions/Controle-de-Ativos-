@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -221,8 +221,24 @@ const AuthPage = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => 
 // --- SETUP INICIAL (Configuração Pós-Login) ---
 const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onComplete: () => void, embedded?: boolean }) => {
   const [companyName, setCompanyName] = React.useState('');
+  const [hasFiliais, setHasFiliais] = React.useState(false);
+  const [filialNames, setFilialNames] = React.useState<string[]>([]);
+  const [currentFilialInput, setCurrentFilialInput] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const addFilialToList = () => {
+    if (currentFilialInput.trim()) {
+      if (!filialNames.includes(currentFilialInput.trim())) {
+        setFilialNames([...filialNames, currentFilialInput.trim()]);
+      }
+      setCurrentFilialInput('');
+    }
+  };
+
+  const removeFilialFromList = (index: number) => {
+    setFilialNames(filialNames.filter((_, i) => i !== index));
+  };
 
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,7 +269,20 @@ const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onCom
 
       if (errLink) throw errLink;
 
-      // 3. Opcionalmente atualizar metadados (para consistência)
+      // 3. Criar filiais se houver
+      if (hasFiliais && filialNames.length > 0) {
+        const filiaisToInsert = filialNames.map(nome => ({
+          nome,
+          empresa_id: company.id
+        }));
+        const { error: errFiliais } = await supabase.from('filiais').insert(filiaisToInsert);
+        if (errFiliais) {
+          console.error('Erro ao inserir filiais iniciais:', errFiliais);
+          // Não travamos o processo principal, mas informamos
+        }
+      }
+
+      // 4. Opcionalmente atualizar metadados (para consistência)
       await supabase.auth.updateUser({
         data: { 
           company_name: trimmedName,
@@ -298,6 +327,56 @@ const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onCom
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
           />
+        </div>
+
+        <div className="p-6 bg-slate-50 rounded-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <input 
+                type="checkbox" 
+                id="check-filiais" 
+                checked={hasFiliais}
+                onChange={(e) => setHasFiliais(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="check-filiais" className="text-xs font-bold text-slate-600 cursor-pointer">CADASTRAR FILIAIS AGORA?</label>
+            </div>
+          </div>
+
+          {hasFiliais && (
+            <div className="space-y-4 pt-2 border-t border-slate-200 animate-in fade-in slide-in-from-top-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nome da Filial"
+                  className="flex-1 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold"
+                  value={currentFilialInput}
+                  onChange={(e) => setCurrentFilialInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addFilialToList())}
+                />
+                <button
+                  type="button"
+                  onClick={addFilialToList}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold"
+                >
+                  ADD
+                </button>
+              </div>
+
+              {filialNames.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {filialNames.map((name, idx) => (
+                    <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
+                      {name}
+                      <button type="button" onClick={() => removeFilialFromList(idx)} className="hover:text-blue-900">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {error && (
@@ -785,6 +864,14 @@ const AssetListView = ({ assets, categorias, initialStatusFilter, onDelete, onEd
                              <Info size={12} /> Detalhes Gerais
                           </h4>
                           <div className="grid grid-cols-2 gap-y-3">
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Cód Base Bem</p>
+                              <p className="text-xs text-slate-800">{asset.codBaseBem || 'Não informado'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Filial</p>
+                              <p className="text-xs text-slate-800">{asset.filial_nome || 'Sede / Matriz'}</p>
+                            </div>
                             <div>
                               <p className="text-[9px] font-bold text-slate-400 uppercase">Data de Compra</p>
                               <p className="text-xs text-slate-800">{formatDate(asset.purchaseDate)}</p>
@@ -2054,7 +2141,7 @@ const AuditView = ({ audits, startAudit, toggleAssetAudit, finalizeAudit, delete
 
 export default function App() {
   const { 
-    assets, categorias, audits, loading, addCategoria, updateCategoria, removeCategoria, stats, 
+    assets, categorias, filiais, audits, loading, addCategoria, updateCategoria, removeCategoria, addFilial, removeFilial, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
     error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, updateEmpresaNome, refresh
   } = useAssets();
@@ -2063,6 +2150,8 @@ export default function App() {
   const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit' | 'configuracoes'>('dashboard');
   const [tempCompanyName, setTempCompanyName] = React.useState<string | null>(null);
   const [isSavingCompany, setIsSavingCompany] = React.useState(false);
+  const [newFilialName, setNewFilialName] = React.useState('');
+  const [isAddingFilial, setIsAddingFilial] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
@@ -2202,9 +2291,11 @@ export default function App() {
     }
 
     const data = {
+      codBaseBem: formData.get('codBaseBem') as string || '',
       name: formData.get('name') as string,
       tag: formData.get('tag') as string,
       categoria: formData.get('categoria') as CategoriaAtivo,
+      filial_id: formData.get('filial_id') as string || null,
       status,
       value: Number(formData.get('value')),
       purchaseDate: formData.get('purchaseDate') as string,
@@ -2520,6 +2611,54 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* SQL REPAIR SECTION FOR FILIAIS */}
+                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão'))) && (
+                      <div className="p-8 bg-amber-50 rounded-3xl border border-amber-200 animate-in fade-in slide-in-from-top-4">
+                        <div className="flex items-start gap-4">
+                          <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-200">
+                            <AlertTriangle size={24} />
+                          </div>
+                          <div className="space-y-4 flex-1">
+                            <div>
+                              <h3 className="text-xl font-black text-amber-900 tracking-tight">Detectamos um erro de Permissão</h3>
+                              <p className="text-amber-700 text-sm font-bold mt-1">O Supabase bloqueou o acesso às filiais. Para resolver, execute o código abaixo no seu SQL Editor:</p>
+                            </div>
+                            
+                            <div className="relative group">
+                              <pre className="p-6 bg-slate-900 text-blue-400 rounded-2xl text-[11px] font-mono overflow-x-auto border-2 border-slate-800 shadow-xl leading-relaxed whitespace-pre-wrap select-all">
+{`CREATE TABLE IF NOT EXISTS filiais (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome text NOT NULL,
+  empresa_id uuid NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now()
+);
+
+GRANT ALL ON filiais TO authenticated;
+GRANT ALL ON filiais TO anon;
+
+ALTER TABLE filiais DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "permit_all" ON filiais;
+ALTER TABLE filiais ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "permit_all" ON filiais FOR ALL TO public USING (true) WITH CHECK (true);
+
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
+GRANT ALL ON assets TO authenticated;
+NOTIFY pgrst, 'reload schema';`}
+                              </pre>
+                              <div className="absolute top-4 right-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800 px-2 py-1 rounded-lg">Clique para selecionar tudo</div>
+                            </div>
+                            
+                            <button 
+                              onClick={() => setCategoriaErro(null)}
+                              className="px-6 py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-black hover:bg-amber-200 transition-all uppercase tracking-widest"
+                            >
+                              Já executei o comando
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="p-8 bg-emerald-50 rounded-3xl border border-emerald-100 mb-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
@@ -2574,6 +2713,63 @@ export default function App() {
                       </div>
                     </div>
                     
+                    <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100">
+                      <h4 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
+                        <Map size={16} className="text-blue-600" /> Filiais e Unidades
+                      </h4>
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Adicionar Nova Filial</label>
+                          <div className="flex gap-3">
+                            <input
+                              type="text"
+                              className="flex-1 px-6 py-4 bg-white border border-slate-200 rounded-2xl text-base focus:ring-2 focus:ring-blue-500 transition-all font-bold text-slate-800"
+                              value={newFilialName}
+                              onChange={(e) => setNewFilialName(e.target.value)}
+                              placeholder="Ex: Filial Sul, Unidade II..."
+                            />
+                            <button
+                              onClick={async () => {
+                                if (!newFilialName) return;
+                                setIsAddingFilial(true);
+                                const success = await addFilial(newFilialName);
+                                if (success) setNewFilialName('');
+                                setIsAddingFilial(false);
+                              }}
+                              disabled={isAddingFilial || !newFilialName}
+                              className="px-8 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 disabled:opacity-50 transition-all shadow-lg active:scale-95"
+                            >
+                              {isAddingFilial ? '...' : 'ADICIONAR'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {filiais.length > 0 && (
+                          <div className="space-y-3">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Filiais Cadastradas</label>
+                            <div className="grid grid-cols-1 gap-2">
+                              {filiais.map(filial => (
+                                <div key={filial.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl mix-blend-multiply">
+                                  <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-slate-50 text-slate-400 rounded-xl">
+                                      <MapPin size={16} />
+                                    </div>
+                                    <span className="font-bold text-slate-700">{filial.nome}</span>
+                                  </div>
+                                  <button 
+                                    onClick={() => removeFilial(filial.id)}
+                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100">
                       <h4 className="text-slate-900 font-black text-sm uppercase tracking-widest mb-6 px-1 flex items-center gap-2">
                         <Lock size={16} className="text-blue-600" /> Segurança da Conta
@@ -2710,6 +2906,27 @@ export default function App() {
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className={filiais.length > 0 ? "grid grid-cols-3 gap-4" : ""}>
+            <div className={filiais.length > 0 ? "col-span-1" : ""}>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Cód Base Bem (Opcional)</label>
+              <input name="codBaseBem" defaultValue={editingAsset?.codBaseBem} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+            {filiais.length > 0 && (
+              <div className="col-span-2">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Filial / Unidade</label>
+                <select 
+                  name="filial_id" 
+                  defaultValue={editingAsset?.filial_id} 
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">Sede / Matriz</option>
+                  {filiais.map(f => (
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <div>
             <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Ativo</label>
             <input name="name" defaultValue={editingAsset?.name} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />

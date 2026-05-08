@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Asset, AuditRecord, Categoria } from './types';
+import { Asset, AuditRecord, Categoria, Filial } from './types';
 import { supabase } from './lib/supabase';
 
 export function useAssets() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [filiais, setFiliais] = useState<Filial[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,16 +55,17 @@ export function useAssets() {
       console.log('✅ Empresa identificada:', userEmpresa.empresa_id);
 
       // 2. Fetch using empresa_id
-      const [catRes, assetRes, auditRes] = await Promise.all([
+      const [catRes, assetRes, auditRes, filialRes] = await Promise.all([
         supabase.from('categorias').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
         supabase.from('assets').select('*').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
-        supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false })
+        supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false }),
+        supabase.from('filiais').select('*').eq('empresa_id', userEmpresa.empresa_id).order('nome')
       ]);
 
       if (catRes.error) {
         console.error('❌ Erro categorias:', catRes.error);
-        if (catRes.error.code === '42501') {
-          setError("Erro de Permissão (403): O banco de dados está bloqueando o acesso. Execute o script SQL de permissões.");
+        if (catRes.error.code === '42501' || catRes.error.message.toLowerCase().includes('permission denied')) {
+          setError("Erro de Permissão: O Supabase bloqueou o acesso. Por favor, vá ao SQL Editor e execute o script de reparo disponível na aba de Configurações.");
         } else {
           setError(`Erro ao carregar categorias: ${catRes.error.message}`);
         }
@@ -76,6 +78,17 @@ export function useAssets() {
 
       setCategorias(freshCats);
 
+      if (filialRes.error) {
+        console.warn('⚠️ Erro ao carregar filiais:', filialRes.error);
+        // Não travamos o sistema por causa das filiais
+        setFiliais([]);
+      } else if (filialRes.data) {
+        setFiliais(filialRes.data.map((f: any) => ({
+          ...f,
+          createdAt: f.created_at
+        })));
+      }
+
       if (assetRes.error) {
         console.error('❌ Erro ativos:', assetRes.error);
         setError(`Erro ao carregar ativos: ${assetRes.error.message}`);
@@ -87,10 +100,13 @@ export function useAssets() {
         }
         setAssets(assetRes.data.map((a: any) => {
           const cat = freshCats.find(c => c.id === a.category_id || c.id === a.categoria_id);
+          const filial = (filialRes.data || []).find((f: any) => f.id === a.filial_id);
           return {
             ...a,
             categoria: cat?.name || 'Sem Categoria',
             categoria_id: a.category_id || a.categoria_id,
+            filial_id: a.filial_id,
+            filial_nome: filial?.nome,
             purchaseDate: a.purchase_date,
             value: a.value,
             assignedTo: a.assigned_to,
@@ -103,6 +119,7 @@ export function useAssets() {
             hasPreventiveMaintenance: a.has_preventive_maintenance,
             hasWarranty: a.has_warranty,
             warrantyExpirationDate: a.warranty_expiration_date,
+            codBaseBem: a.cod_base_bem,
             createdAt: a.created_at,
             updatedAt: a.updated_at
           };
@@ -132,6 +149,7 @@ export function useAssets() {
         fetchAll();
       } else if (event === 'SIGNED_OUT') {
         setCategorias([]);
+        setFiliais([]);
         setAssets([]);
         setAudits([]);
         setEmpresaId(null);
@@ -242,6 +260,62 @@ export function useAssets() {
       setCategorias(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     }
   };
+  
+  const addFilial = async (nome: string) => {
+    if (!nome.trim() || !empresaId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('filiais')
+        .insert([{ nome: nome.trim(), empresa_id: empresaId }])
+        .select()
+        .single();
+        
+      if (error) throw error;
+      if (data) {
+        setFiliais(prev => [...prev, { ...data, createdAt: data.created_at }]);
+        return true;
+      }
+    } catch (err: any) {
+      console.error('Erro ao adicionar filial:', err);
+      if (err.code === '42501' || err.message.toLowerCase().includes('permission denied')) {
+        setError(`ERRO DE PERMISSÃO: O Supabase bloqueou a criação da filial. 
+        
+Para corrigir, copie e execute este código no SQL Editor do Supabase:
+
+CREATE TABLE IF NOT EXISTS filiais (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome text NOT NULL,
+  empresa_id uuid NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now()
+);
+
+GRANT ALL ON TABLE filiais TO authenticated;
+ALTER TABLE filiais DISABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "total_access" ON filiais;
+ALTER TABLE filiais ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "total_access" ON filiais FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;`);
+      } else {
+        setError(`Erro ao adicionar filial: ${err.message}`);
+      }
+    }
+    return false;
+  };
+
+  const removeFilial = async (id: string) => {
+    try {
+      const { error } = await supabase.from('filiais').delete().eq('id', id);
+      if (error) throw error;
+      setFiliais(prev => prev.filter(f => f.id !== id));
+      return true;
+    } catch (err: any) {
+      console.error('Erro ao remover filial:', err);
+      setError(`Erro ao remover filial: ${err.message}`);
+    }
+    return false;
+  };
 
   const removeCategoria = async (id: string) => {
     setError(null);
@@ -320,6 +394,7 @@ export function useAssets() {
       assigned_to: asset.assignedTo,
       description: asset.description,
       empresa_id: currentEmpresaId,
+      filial_id: asset.filial_id || null,
       maintenance_notes: asset.maintenanceNotes,
       maintenance_value: asset.maintenanceValue,
       maintenance_history: asset.maintenanceHistory,
@@ -328,7 +403,8 @@ export function useAssets() {
       maintenance_interval_months: asset.maintenanceIntervalMonths || 0,
       has_preventive_maintenance: !!asset.hasPreventiveMaintenance,
       has_warranty: !!asset.hasWarranty,
-      warranty_expiration_date: asset.warrantyExpirationDate || null
+      warranty_expiration_date: asset.warrantyExpirationDate || null,
+      cod_base_bem: asset.codBaseBem || null
     };
 
     console.log('📤 Tentando inserir ativo no Supabase:', newAssetData);
@@ -368,6 +444,7 @@ export function useAssets() {
           hasPreventiveMaintenance: data.has_preventive_maintenance,
           hasWarranty: data.has_warranty,
           warrantyExpirationDate: data.warranty_expiration_date,
+          codBaseBem: data.cod_base_bem,
           createdAt: data.created_at,
           updatedAt: data.updated_at
         };
@@ -434,6 +511,7 @@ export function useAssets() {
     if (updates.value !== undefined) updateData.value = updates.value;
     if (updates.location !== undefined) updateData.location = updates.location;
     if (updates.assignedTo !== undefined) updateData.assigned_to = updates.assignedTo;
+    if (updates.filial_id !== undefined) updateData.filial_id = updates.filial_id || null;
     if (updates.maintenanceNotes !== undefined) updateData.maintenance_notes = updates.maintenanceNotes;
     if (updates.maintenanceValue !== undefined) updateData.maintenance_value = updates.maintenanceValue;
     if (updates.maintenanceHistory !== undefined) updateData.maintenance_history = updates.maintenanceHistory;
@@ -448,6 +526,9 @@ export function useAssets() {
     if (updates.hasWarranty !== undefined) updateData.has_warranty = updates.hasWarranty;
     if (updates.warrantyExpirationDate !== undefined) {
       updateData.warranty_expiration_date = updates.warrantyExpirationDate || null;
+    }
+    if (updates.codBaseBem !== undefined) {
+      updateData.cod_base_bem = updates.codBaseBem || null;
     }
     if (updates.description !== undefined) updateData.description = updates.description;
 
@@ -549,7 +630,9 @@ export function useAssets() {
         has_preventive_maintenance: !!asset.hasPreventiveMaintenance,
         has_warranty: !!asset.hasWarranty,
         warranty_expiration_date: asset.warrantyExpirationDate || null,
+        cod_base_bem: asset.codBaseBem || null,
         description: asset.description || '',
+        filial_id: asset.filial_id || null,
         empresa_id: currentEmpresaId
       };
     });
@@ -758,11 +841,14 @@ export function useAssets() {
   return { 
     assets, 
     categorias, 
+    filiais,
     audits,
     loading,
     addCategoria, 
     updateCategoria,
     removeCategoria, 
+    addFilial,
+    removeFilial,
     addAsset, 
     updateAsset, 
     deleteAsset, 
