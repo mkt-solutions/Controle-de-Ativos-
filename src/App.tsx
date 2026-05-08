@@ -278,11 +278,25 @@ const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onCom
         const { error: errFiliais } = await supabase.from('filiais').insert(filiaisToInsert);
         if (errFiliais) {
           console.error('Erro ao inserir filiais iniciais:', errFiliais);
-          // Não travamos o processo principal, mas informamos
         }
       }
 
-      // 4. Opcionalmente atualizar metadados (para consistência)
+      // 4. Criar categorias padrão
+      const defaultCategories = [
+        { name: 'Tecnologia / TI', useful_life_years: 5, empresa_id: company.id },
+        { name: 'Mobiliário', useful_life_years: 10, empresa_id: company.id },
+        { name: 'Máquinas e Equipamentos', useful_life_years: 10, empresa_id: company.id },
+        { name: 'Ferramentas Elétricas', useful_life_years: 5, empresa_id: company.id },
+        { name: 'Veículos', useful_life_years: 5, empresa_id: company.id },
+        { name: 'Infraestrutura', useful_life_years: 10, empresa_id: company.id },
+      ];
+
+      const { error: errCats } = await supabase.from('categorias').insert(defaultCategories);
+      if (errCats) {
+        console.error('Erro ao inserir categorias padrão:', errCats);
+      }
+
+      // 5. Opcionalmente atualizar metadados (para consistência)
       await supabase.auth.updateUser({
         data: { 
           company_name: trimmedName,
@@ -1486,29 +1500,43 @@ const CategoryItem: React.FC<CategoryItemProps> = ({ cat, onUpdate, onRemove }) 
     }
   };
 
+  const annualDepreciation = cat.usefulLifeYears > 0 ? (100 / cat.usefulLifeYears).toFixed(0) : '0';
+
   return (
-    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group">
-      <div className="flex items-center gap-4 flex-1">
-        <span className="text-sm font-medium text-slate-700 min-w-[120px]">{cat.name}</span>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-400 uppercase font-bold">Vida Útil:</span>
-          <input 
-            type="number"
-            min="1"
-            value={localLife}
-            onChange={(e) => setLocalLife(e.target.value)}
-            onBlur={handleBlur}
-            onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
-            className="w-16 px-2 py-1 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 focus:ring-1 focus:ring-blue-500 outline-none"
-          />
-          <span className="text-[10px] text-slate-400 font-bold uppercase">Anos</span>
+    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-blue-200 transition-all">
+      <div className="flex items-center gap-8 flex-1">
+        <span className="text-sm font-black text-slate-900 min-w-[180px] tracking-tight">{cat.name}</span>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-slate-400 uppercase font-bold tracking-widest px-1">Vida Útil</span>
+            <div className="flex items-center gap-1.5">
+              <input 
+                type="number"
+                min="1"
+                value={localLife}
+                onChange={(e) => setLocalLife(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={(e) => e.key === 'Enter' && handleBlur()}
+                className="w-16 px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-xs font-black text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-center shadow-sm"
+              />
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Anos</span>
+            </div>
+          </div>
+
+          <div className="h-6 w-px bg-slate-200" />
+
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase font-bold tracking-widest px-1">Depreciação Anual</span>
+            <span className="text-sm font-black text-blue-600 px-1">{annualDepreciation}%</span>
+          </div>
         </div>
       </div>
       <button 
         onClick={() => onRemove(cat.id)}
-        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl opacity-0 group-hover:opacity-100 transition-all active:scale-95"
       >
-        <Trash2 size={14} />
+        <Trash2 size={16} />
       </button>
     </div>
   );
@@ -1617,11 +1645,12 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
       <div className="mb-8 p-4 bg-blue-50 border border-blue-100 rounded-lg flex gap-3">
         <Info size={18} className="text-blue-500 shrink-0 mt-0.5" />
         <p className="text-xs text-blue-700 leading-relaxed font-medium">
-          Verifique sempre junto ao seu contador a vida útil que está sendo usada na sua empresa. Atualize os valores sempre que necessário.
+          A depreciação é calculada automaticamente com base na vida útil definida para cada categoria. 
+          A fórmula utilizada é: <span className="font-bold underline">Valor do Bem / (Anos de Vida Útil × 12)</span> por mês decorrido desde a compra.
         </p>
       </div>
       
-      <div className="flex flex-col sm:flex-row gap-2 mb-8">
+      <div className="flex flex-col sm:flex-row gap-2 mb-10">
         <div className="flex-1">
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome da Categoria</label>
           <input 
@@ -1646,23 +1675,29 @@ const CategoriasView = ({ categorias, onAdd, onUpdate, onRemove, error, clearErr
         <div className="flex items-end">
           <button 
             onClick={handleAdd}
-            className="bg-blue-600 px-4 py-2 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all flex items-center gap-2 h-[38px]"
+            className="w-full sm:w-auto px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition-all active:scale-[0.98] h-[38px] flex items-center justify-center gap-2"
           >
-            <Plus size={18} /> Adicionar
+            <Plus size={18} /> ADICIONAR
           </button>
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="hidden sm:grid grid-cols-12 px-4 mb-2">
+        <span className="col-span-6 text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Categoria</span>
+        <span className="col-span-3 text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 text-center">Vida Útil</span>
+        <span className="col-span-3 text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Taxa Anual</span>
+      </div>
+
+      <div className="space-y-3">
         {loading && categorias.length === 0 ? (
-          <div className="text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+          <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
             <div className="flex flex-col items-center gap-3">
               <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <p className="text-slate-400 text-xs font-medium italic">Sincronizando categorias com o servidor...</p>
+              <p className="text-slate-400 text-xs font-medium italic">Sincronizando categorias...</p>
             </div>
           </div>
         ) : categorias.length === 0 ? (
-          <div className="text-center py-12 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+          <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
             <p className="text-slate-400 text-xs font-medium italic">Nenhuma categoria encontrada. Adicione uma acima.</p>
           </div>
         ) : (
