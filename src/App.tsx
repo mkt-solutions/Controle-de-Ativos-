@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -2406,6 +2406,128 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
   );
 };
 
+const PlansView = () => {
+  const plans = [
+    {
+      name: 'Básico',
+      price: 'R$ 37,50',
+      period: '/mês',
+      description: 'Ideal para pequenas empresas que estão começando o controle patrimonial.',
+      features: ['Até 500 ativos', '1 Filial / Sede', 'Relatórios básicos', 'App Mobile / QR Code', 'Suporte via E-mail'],
+      icon: Box,
+      color: 'bg-slate-50 text-slate-600',
+      buttonVariant: 'outline'
+    },
+    {
+      name: 'Profissional',
+      price: 'R$ 59,90',
+      period: '/mês',
+      description: 'A solução completa para empresas em crescimento com múltiplas unidades.',
+      features: ['Ativos ilimitados', 'Até 5 Filiais', 'Relatórios avançados / Excel', 'Gestão de Manutenção', 'Suporte Prioritário', 'Histórico completo'],
+      icon: Zap,
+      color: 'bg-blue-50 text-blue-600',
+      featured: true,
+      buttonVariant: 'primary'
+    },
+    {
+      name: 'Enterprise',
+      price: 'Sob Consulta',
+      period: '',
+      description: 'Customização total e segurança máxima para grandes corporações.',
+      features: ['Multinacionais / Ilimitado', 'Múltiplos CNPJs', 'API de Integração', 'Single Sign-On (SSO)', 'Gerente de Contas Dedicado', 'Onboarding Personalizado'],
+      icon: ShieldCheck,
+      color: 'bg-indigo-50 text-indigo-600',
+      buttonVariant: 'outline'
+    }
+  ];
+
+  return (
+    <div className="max-w-6xl mx-auto py-12 px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="text-center mb-16">
+        <h2 className="text-4xl font-black text-slate-900 tracking-tight mb-4">Escolha o plano ideal para seu negócio</h2>
+        <p className="text-blue-600 font-bold mb-4 tracking-wide uppercase text-xs">
+          plano free para testar: cadastre até 20 ativos para testar o sistema
+        </p>
+        <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+          Gerencie seu patrimônio com eficiência, transparência e controle total. Sem taxas escondidas.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {plans.map((plan) => (
+          <div 
+            key={plan.name}
+            className={cn(
+              "relative bg-white rounded-3xl p-8 border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1",
+              plan.featured ? "border-blue-200 shadow-xl shadow-blue-100/50 scale-105 z-10" : "border-slate-100 shadow-lg shadow-slate-200/50"
+            )}
+          >
+            {plan.featured && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
+                MAIS POPULAR
+              </div>
+            )}
+            
+            <div className="flex items-center gap-4 mb-6">
+              <div className={cn("p-3 rounded-2xl", plan.color)}>
+                <plan.icon size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">{plan.name}</h3>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-baseline gap-1">
+                <span className="text-4xl font-black text-slate-900">{plan.price}</span>
+                <span className="text-slate-400 font-medium">{plan.period}</span>
+              </div>
+              <p className="text-slate-500 text-sm mt-3 leading-relaxed">
+                {plan.description}
+              </p>
+            </div>
+
+            <hr className="border-slate-100 mb-8" />
+
+            <ul className="space-y-4 mb-10">
+              {plan.features.map((feature, i) => (
+                <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+                  <div className="mt-1 shrink-0 w-4 h-4 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Check size={10} />
+                  </div>
+                  {feature}
+                </li>
+              ))}
+            </ul>
+
+            <button 
+              className={cn(
+                "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98]",
+                plan.buttonVariant === 'primary' 
+                  ? "bg-blue-600 text-white shadow-xl shadow-blue-200 hover:bg-blue-700 hover:shadow-blue-300"
+                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+              )}
+            >
+              Começar {plan.name}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-20 p-10 bg-slate-900 rounded-[3rem] text-center text-white relative overflow-hidden group">
+        <div className="absolute top-0 right-0 p-12 bg-blue-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-blue-600/30 transition-all duration-700" />
+        <div className="relative z-10 max-w-2xl mx-auto">
+          <h3 className="text-3xl font-black mb-4">Precisa de uma solução sob medida?</h3>
+          <p className="text-slate-400 mb-8 font-medium">
+            Fale com nossos especialistas em gestão patrimonial e descubra como podemos ajudar sua empresa a economizar e ter mais controle.
+          </p>
+          <button className="px-8 py-4 bg-white text-slate-900 rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl">
+            Falar com Consultor
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const { 
     assets, categorias, filiais, audits, loading, addCategoria, updateCategoria, removeCategoria, addFilial, removeFilial, stats, 
@@ -2414,7 +2536,7 @@ export default function App() {
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
-  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit' | 'configuracoes'>('dashboard');
+  const [view, setView] = React.useState<'dashboard' | 'list' | 'reports' | 'categorias' | 'audit' | 'configuracoes' | 'plans'>('dashboard');
   const [tempCompanyName, setTempCompanyName] = React.useState<string | null>(null);
   const [isSavingCompany, setIsSavingCompany] = React.useState(false);
   const [newFilialName, setNewFilialName] = React.useState('');
@@ -2727,6 +2849,7 @@ export default function App() {
               <ExternalLink size={18} className="transition-transform duration-200 group-hover:scale-110" />
               <span>Pedir novas placas</span>
             </a>
+            <SidebarItem icon={CreditCard} label="Plano" active={view === 'plans'} onClick={() => { setView('plans'); setIsSidebarOpen(false); }} />
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-800">
@@ -2763,7 +2886,7 @@ export default function App() {
               <Menu size={20} />
             </button>
             <h2 className="text-base lg:text-lg font-bold text-slate-800 leading-none truncate min-w-fit">
-              {view === 'dashboard' ? 'Painel Geral' : view === 'list' ? 'Inventário' : view === 'reports' ? 'Relatórios' : view === 'audit' ? 'Controle Físico' : 'Configurações'}
+              {view === 'dashboard' ? 'Painel Geral' : view === 'list' ? 'Inventário' : view === 'reports' ? 'Relatórios' : view === 'audit' ? 'Controle Físico' : view === 'plans' ? 'Nossos Planos' : 'Configurações'}
             </h2>
             <div className="relative hidden md:block w-80">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
@@ -2872,6 +2995,7 @@ export default function App() {
               clearError={() => setCategoriaErro(null)}
             />
           )}
+          {view === 'plans' && <PlansView />}
           {view === 'configuracoes' && (
             <div className="max-w-2xl mx-auto py-8">
               <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-xl shadow-slate-200/50">
