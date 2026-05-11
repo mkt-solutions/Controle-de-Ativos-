@@ -953,7 +953,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                           </h4>
                           <div className="grid grid-cols-2 gap-y-3">
                             <div>
-                              <p className="text-[9px] font-bold text-slate-400 uppercase">Cód Base Bem</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase">Cód. Contábil (opcional)</p>
                               <p className="text-xs text-slate-800">{asset.codBaseBem || 'Não informado'}</p>
                             </div>
                             <div>
@@ -3203,7 +3203,7 @@ NOTIFY pgrst, 'reload schema';`}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className={filiais.length > 0 ? "grid grid-cols-3 gap-4" : ""}>
             <div className={filiais.length > 0 ? "col-span-1" : ""}>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Cód Base Bem (Opcional)</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Cód. Contábil (opcional)</label>
               <input name="codBaseBem" defaultValue={editingAsset?.codBaseBem} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             {filiais.length > 0 && (
@@ -3230,6 +3230,9 @@ NOTIFY pgrst, 'reload schema';`}
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Tag de Patrimônio</label>
               <input name="tag" defaultValue={editingAsset?.tag} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+              <p className="mt-1 text-[9px] text-amber-600 font-medium">
+                Aviso: digite exatamente o que está escrito na Tag. Ex. 000010
+              </p>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
