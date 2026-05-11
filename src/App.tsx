@@ -2414,6 +2414,7 @@ const PlansView = () => {
       period: '/mês',
       description: 'Ideal para pequenas empresas que estão começando o controle patrimonial.',
       features: [
+        'Até 500 ativos',
         'Cadastro Sede e Filiais',
         'Importação Relatórios',
         'Exportação Relatórios',
@@ -2437,6 +2438,7 @@ const PlansView = () => {
       period: '/mês',
       description: 'A solução completa para empresas em crescimento com múltiplas unidades.',
       features: [
+        'Até 3.000 ativos',
         'Cadastro Sede e Filiais',
         'Importação Relatórios',
         'Exportação Relatórios',
@@ -2457,10 +2459,11 @@ const PlansView = () => {
     },
     {
       name: 'Enterprise',
-      price: 'Sob Consulta',
-      period: '',
+      price: 'R$ 107,90',
+      period: '/mês',
       description: 'Customização total e segurança máxima para grandes corporações.',
       features: [
+        'Até 10.000 ativos',
         'Cadastro Sede e Filiais',
         'Importação Relatórios',
         'Exportação Relatórios',
