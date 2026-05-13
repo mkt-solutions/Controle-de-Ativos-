@@ -2405,6 +2405,17 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
         };
         statusCell.font = { color: { argb: 'FF000000' }, bold: true };
       }
+
+      // Style Column C (Item) if it includes "(Fora do Setor)"
+      const nameCell = row.getCell(3);
+      if (item.name.includes('(Fora do Setor)')) {
+        nameCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFEB9C' } // Yellow
+        };
+        nameCell.font = { color: { argb: 'FF966500' }, bold: true };
+      }
     });
 
     // Formatting headers
