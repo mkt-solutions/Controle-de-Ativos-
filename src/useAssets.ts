@@ -72,6 +72,13 @@ export function useAssets() {
         }
       }
 
+      if (auditRes.error) {
+        console.error('❌ Erro inventários:', auditRes.error);
+        if (auditRes.error.message.toLowerCase().includes('departamento')) {
+          setError("Aviso do Sistema: Uma nova coluna 'departamento' é necessária na tabela 'audits'. Por favor, execute o script de reparo no SQL Editor (veja na aba Configurações).");
+        }
+      }
+
       const freshCats = catRes.data ? catRes.data.map((c: any) => ({
         ...c,
         usefulLifeYears: c.useful_life_years

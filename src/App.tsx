@@ -1231,17 +1231,86 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
   })).filter(c => c.value > 0).sort((a, b) => b.value - a.value);
 
   // 8. Inventário
-  const filteredAudits = audits.filter(a => {
-    if (selectedFilial === 'all') return true;
-    if (selectedFilial === 'hq') return !a.filial_id;
-    return a.filial_id === selectedFilial;
-  });
+  const auditDataSummary = React.useMemo(() => {
+    const finalizedAudits = audits.filter(a => a.isFinalized);
+    
+    if (selectedFilial !== 'all') {
+      const filteredAudits = finalizedAudits.filter(a => {
+        if (selectedFilial === 'hq') return !a.filial_id;
+        return a.filial_id === selectedFilial;
+      });
 
-  const latestAudit = filteredAudits.filter(a => a.isFinalized).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-  const auditData = latestAudit ? [
-    { name: 'Encontrados', value: latestAudit.verifiedIds.length },
-    { name: 'Não Encontrados', value: latestAudit.allAssetsSnapshot.length - latestAudit.verifiedIds.length }
-  ] : [];
+      if (filteredAudits.length === 0) return null;
+
+      let totalFound = 0;
+      let totalExpected = 0;
+      let branchName = "";
+      let latestDate = "";
+
+      filteredAudits.forEach(audit => {
+        totalFound += (audit.verifiedIds?.length || 0);
+        totalExpected += (audit.allAssetsSnapshot?.length || 0);
+        if (!branchName) branchName = audit.filial_nome || 'Sede';
+        if (!latestDate || new Date(audit.date) > new Date(latestDate)) {
+          latestDate = audit.date;
+        }
+      });
+
+      return {
+        type: 'pie',
+        title: `Resultado Consolidado: ${branchName}`,
+        date: latestDate,
+        data: [
+          { name: 'Encontrados', value: totalFound },
+          { name: 'Não Encontrados', value: Math.max(0, totalExpected - totalFound) }
+        ]
+      };
+    } else {
+      // Aggregated view for 'All' - showing comparison between sites
+      const sites = [{ id: 'hq', name: 'Sede' }, ...filiais.map(f => ({ id: f.id, name: f.nome }))];
+      let globalFoundTotal = 0;
+      let globalExpectedTotal = 0;
+
+      const comparativeData = sites.map(site => {
+        const siteAudits = finalizedAudits.filter(a => site.id === 'hq' ? !a.filial_id : a.filial_id === site.id);
+        
+        if (siteAudits.length === 0) return null;
+
+        let totalFound = 0;
+        let totalExpected = 0;
+
+        siteAudits.forEach(audit => {
+          totalFound += (audit.verifiedIds?.length || 0);
+          totalExpected += (audit.allAssetsSnapshot?.length || 0);
+        });
+
+        globalFoundTotal += totalFound;
+        globalExpectedTotal += totalExpected;
+
+        return {
+          name: site.name,
+          percent: totalExpected > 0 ? Math.round((totalFound / totalExpected) * 100) : 0,
+          found: totalFound,
+          total: totalExpected
+        };
+      }).filter(Boolean);
+
+      if (comparativeData.length === 0) return null;
+
+      return {
+        type: 'all',
+        title: 'Cobertura por Unidade (%)',
+        data: comparativeData,
+        globalPie: {
+          title: 'Resultado Consolidado: Toda Empresa',
+          data: [
+            { name: 'Encontrados', value: globalFoundTotal },
+            { name: 'Não Encontrados', value: Math.max(0, globalExpectedTotal - globalFoundTotal) }
+          ]
+        }
+      };
+    }
+  }, [selectedFilial, audits, filiais]);
 
   const exportAccountingReport = async () => {
     const workbook = new ExcelJS.Workbook();
@@ -1685,29 +1754,72 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
         </div>
 
         {/* 8. Inventário */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h3 className="text-sm font-bold text-slate-800">Resultado do Último Inventário</h3>
-            {latestAudit && <span className="text-[10px] text-slate-400 font-bold">{formatDate(latestAudit.date)}</span>}
-          </div>
-          <div className="h-64">
-            {auditData.length > 0 ? (
+        {auditDataSummary?.type === 'all' && (
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4 px-2">
+              <h3 className="text-sm font-bold text-slate-800">{auditDataSummary.globalPie.title}</h3>
+            </div>
+            <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <RePieChart>
-                  <Pie data={auditData} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                  <Pie data={auditDataSummary.globalPie.data} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
                     <Cell fill="#10b981" />
                     <Cell fill="#ef4444" />
                   </Pie>
                   <Tooltip />
                 </RePieChart>
               </ResponsiveContainer>
+              <div className="flex gap-4 justify-center mt-4">
+                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#10b981] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Encontrados</span></div>
+                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#ef4444] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Não Encontrados</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4 px-2">
+            <h3 className="text-sm font-bold text-slate-800">{auditDataSummary?.title || 'Resultado do Inventário'}</h3>
+            {auditDataSummary?.type === 'pie' && auditDataSummary.date && (
+              <span className="text-[10px] text-slate-400 font-bold">{formatDate(auditDataSummary.date)}</span>
+            )}
+          </div>
+          <div className="h-64">
+            {auditDataSummary ? (
+              auditDataSummary.type === 'pie' ? (
+                <>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RePieChart>
+                      <Pie data={auditDataSummary.data} dataKey="value" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                        <Cell fill="#10b981" />
+                        <Cell fill="#ef4444" />
+                      </Pie>
+                      <Tooltip />
+                    </RePieChart>
+                  </ResponsiveContainer>
+                  <div className="flex gap-4 justify-center mt-4">
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#10b981] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Encontrados</span></div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#ef4444] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Não Encontrados</span></div>
+                  </div>
+                </>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={auditDataSummary.data}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} domain={[0, 100]} />
+                    <Tooltip cursor={{fill: '#f8fafc'}} formatter={(val) => [`${val}%`, 'Cobertura']} />
+                    <Bar dataKey="percent" fill="#10b981" radius={[4, 4, 0, 0]} barSize={34}>
+                      {auditDataSummary.data.map((entry: any, index: number) => (
+                         <Cell key={`cell-${index}`} fill={entry.percent < 90 ? '#f59e0b' : '#10b981'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )
             ) : (
               <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">Nenhum inventário finalizado encontrado.</div>
             )}
-            <div className="flex gap-4 justify-center mt-4">
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#10b981] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Encontrados</span></div>
-              <div className="flex items-center gap-2"><div className="w-3 h-3 bg-[#ef4444] rounded-sm"></div><span className="text-[10px] font-bold text-slate-500 uppercase">Não Encontrados</span></div>
-            </div>
           </div>
         </div>
       </div>
@@ -2932,8 +3044,17 @@ export default function App() {
 
   if (isAuthenticated === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col gap-4">
         <div className="w-8 h-8 border-3 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
+        <button 
+          onClick={async () => {
+             await supabase.auth.signOut();
+             window.location.reload();
+          }}
+          className="text-slate-400 text-[10px] font-bold uppercase hover:underline"
+        >
+          Limpar Sessão
+        </button>
       </div>
     );
   }
@@ -2956,31 +3077,33 @@ export default function App() {
           <div className="space-y-2">
             <p className="text-slate-700 font-bold uppercase tracking-[0.2em] text-[10px]">Sincronizando Empresa</p>
             <p className="text-slate-500 text-xs leading-relaxed">
-              {syncTimeout 
+              {categoriaErro ? (
+                <span className="text-rose-500 font-semibold">{categoriaErro}</span>
+              ) : syncTimeout 
                 ? "A sincronização está demorando mais que o esperado. Verifique se o SQL foi executado corretamente no console do Supabase." 
                 : "Estamos preparando seu ambiente de gestão de ativos."}
             </p>
           </div>
 
-          {syncTimeout && (
-            <div className="flex flex-col gap-2 w-full">
+          <div className="flex flex-col gap-2 w-full">
+            {syncTimeout || categoriaErro ? (
               <button 
                 onClick={() => window.location.reload()}
                 className="w-full py-2 px-4 bg-white border border-slate-200 text-slate-700 text-[10px] font-bold uppercase rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
               >
                 Tentar Novamente
               </button>
-              <button 
-                onClick={async () => {
-                   await supabase.auth.signOut();
-                   window.location.reload();
-                }}
-                className="w-full py-2 px-4 text-rose-500 text-[10px] font-bold uppercase hover:underline"
-              >
-                Sair / Logout
-              </button>
-            </div>
-          )}
+            ) : null}
+            <button 
+              onClick={async () => {
+                 await supabase.auth.signOut();
+                 window.location.reload();
+              }}
+              className="w-full py-2 px-4 text-rose-500 text-[10px] font-bold uppercase hover:underline"
+            >
+              Sair / Logout
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -3269,6 +3392,7 @@ export default function App() {
                       categoriaErro.includes('model') || 
                       categoriaErro.includes('serial_number') || 
                       categoriaErro.includes('audits') || 
+                      categoriaErro.includes('departamento') ||
                       categoriaErro.includes('conferência')
                     )) && (
                       <div className="p-8 bg-amber-50 rounded-3xl border border-amber-200 animate-in fade-in slide-in-from-top-4">
