@@ -51,6 +51,9 @@ export interface Asset {
   hasPreventiveMaintenance?: boolean;
   hasWarranty?: boolean;
   warrantyExpirationDate?: string;
+  brand?: string;
+  model?: string;
+  serialNumber?: string;
   description?: string;
   codBaseBem?: string;
   empresa_id: string;

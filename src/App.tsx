@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -79,6 +79,61 @@ const StatCard = ({ label, value, trend, trendColor, onClick }: { label: string,
     {trend && (
       <p className={cn("text-xs mt-2 font-medium", trendColor || "text-slate-500")}>{trend}</p>
     )}
+  </div>
+);
+
+const AccordionItem = ({ 
+  id, 
+  title, 
+  icon: Icon, 
+  isActive, 
+  onClick, 
+  children 
+}: { 
+  id: string, 
+  title: string, 
+  icon: any, 
+  isActive: boolean, 
+  onClick: () => void, 
+  children: React.ReactNode 
+}) => (
+  <div className={cn("border rounded-2xl overflow-hidden transition-all duration-300", isActive ? "shadow-md border-blue-200 ring-1 ring-blue-50" : "bg-white border-slate-100")}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center justify-between px-5 py-4 transition-all",
+        isActive ? "bg-blue-50/50 text-blue-600" : "hover:bg-slate-50 text-slate-600"
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <div className={cn("p-2 rounded-lg transition-colors", isActive ? "bg-blue-600 text-white shadow-sm" : "bg-slate-100 text-slate-400")}>
+          <Icon size={16} />
+        </div>
+        <span className="text-xs font-bold uppercase tracking-widest">{title}</span>
+      </div>
+      <motion.div
+        animate={{ rotate: isActive ? 180 : 0 }}
+        transition={{ duration: 0.2 }}
+        className="text-slate-300"
+      >
+        <ChevronDown size={18} />
+      </motion.div>
+    </button>
+    <AnimatePresence initial={false}>
+      {isActive && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
+          <div className="px-5 py-6 space-y-5 bg-white border-t border-slate-50">
+            {children}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   </div>
 );
 
@@ -652,12 +707,16 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
         return {
           name: item.Nome || item.name || '',
           tag: String(item['Tag de Patrimônio'] || item.Patrimonio || item.tag || ''),
+          brand: item.Marca || item.brand || '',
+          model: item.Modelo || item.model || '',
+          serialNumber: item['Nº Série'] || item.serial_number || item.serialNumber || '',
           categoria: (item.Categoria || item.categoria || item.category || 'Outros') as CategoriaAtivo,
           status: 'Ativo' as AssetStatus,
           value: Number(item.Valor || item.value || 0),
           purchaseDate: pDate,
           location: item.Departamento || item.Localizacao || item.location || 'Nao Informado',
           codBaseBem: item['Código Base Bem'] || item.cod_base_bem || item.codBaseBem || '',
+          description: item['Observações'] || item.description || '',
           filial_id: filialObj?.id || null,
           maintenanceHistory: [],
           hasPreventiveMaintenance: false,
@@ -688,32 +747,40 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
     worksheet.columns = [
       { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
+      { header: 'Marca', key: 'brand', width: 20 },
+      { header: 'Modelo', key: 'model', width: 20 },
+      { header: 'Nº Série', key: 'serialNumber', width: 20 },
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Código Base Bem', key: 'codBaseBem', width: 20 },
       { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Departamento', key: 'location', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
-      { header: 'Data de Compra', key: 'purchaseDate', width: 15 }
+      { header: 'Data de Compra', key: 'purchaseDate', width: 15 },
+      { header: 'Observações', key: 'description', width: 30 }
     ];
 
     // Formatar coluna A como texto para suportar zeros à esquerda (ex: 000001)
     worksheet.getColumn(1).numFmt = '@';
     
-    // Formatar coluna I como Data (DD/MM/YYYY)
-    worksheet.getColumn(9).numFmt = 'DD/MM/YYYY';
+    // Formatar coluna L como Data (ajustado índice de 9 para 12)
+    worksheet.getColumn(12).numFmt = 'DD/MM/YYYY';
 
     // Add an example row as instruction
     worksheet.addRow({
       tag: '000001',
       name: 'Exemplo de Computador',
+      brand: 'Dell',
+      model: 'OptiPlex 7000',
+      serialNumber: 'SN123456789',
       categoria: 'Computadores',
       codBaseBem: 'CP-001X',
       filial_nome: filiais.length > 0 ? filiais[0].nome : 'Sede / Matriz',
       location: 'Escritório Central',
       status: 'Ativo',
       value: 3500.00,
-      purchaseDate: new Date(2024, 0, 15) // Usando objeto Date para respeitar a formatação da coluna
+      purchaseDate: new Date(2024, 0, 15),
+      description: 'Computador do setor administrativo'
     });
 
     // Formatting headers
@@ -736,31 +803,39 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
     worksheet.columns = [
       { header: 'Tag de Patrimônio', key: 'tag', width: 20 },
       { header: 'Nome', key: 'name', width: 30 },
+      { header: 'Marca', key: 'brand', width: 20 },
+      { header: 'Modelo', key: 'model', width: 20 },
+      { header: 'Nº Série', key: 'serialNumber', width: 20 },
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Código Base Bem', key: 'codBaseBem', width: 20 },
       { header: 'Filial', key: 'filial_nome', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data de Compra', key: 'purchaseDate', width: 15 },
-      { header: 'Departamento', key: 'location', width: 20 }
+      { header: 'Departamento', key: 'location', width: 20 },
+      { header: 'Observações', key: 'description', width: 30 }
     ];
 
     // Formatar coluna A como texto
     worksheet.getColumn(1).numFmt = '@';
-    // Formatar coluna H como Data
-    worksheet.getColumn(8).numFmt = 'DD/MM/YYYY';
+    // Formatar coluna K como Data (ajustado de 8 para 11)
+    worksheet.getColumn(11).numFmt = 'DD/MM/YYYY';
 
     filtered.forEach(a => {
       worksheet.addRow({
         tag: a.tag,
         name: a.name,
+        brand: a.brand,
+        model: a.model,
+        serialNumber: a.serialNumber,
         categoria: a.categoria,
         codBaseBem: a.codBaseBem,
         filial_nome: a.filial_nome || 'Sede / Matriz',
         status: a.status,
         value: a.value,
         purchaseDate: new Date(a.purchaseDate),
-        location: a.location
+        location: a.location,
+        description: a.description
       });
     });
 
@@ -961,6 +1036,18 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                             <div>
                               <p className="text-[9px] font-bold text-slate-400 uppercase">Filial / Unidade</p>
                               <p className="text-xs text-slate-800">{asset.filial_nome || 'Sede / Matriz'}</p>
+                            </div>
+                            <div>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">Marca</p>
+                               <p className="text-xs text-slate-800">{asset.brand || '-'}</p>
+                            </div>
+                            <div>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">Modelo</p>
+                               <p className="text-xs text-slate-800">{asset.model || '-'}</p>
+                            </div>
+                            <div>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">Nº de Série</p>
+                               <p className="text-xs text-slate-800 font-mono">{asset.serialNumber || '-'}</p>
                             </div>
                             <div>
                               <p className="text-[9px] font-bold text-slate-400 uppercase">Data de Compra</p>
@@ -2678,6 +2765,7 @@ export default function App() {
   const [hasPreventiveMaintenance, setHasPreventiveMaintenance] = React.useState<boolean>(false);
   const [initialListStatus, setInitialListStatus] = React.useState<string>('all');
   const [showAlertsModal, setShowAlertsModal] = React.useState(false);
+  const [activeFormSection, setActiveFormSection] = React.useState<'basics' | 'specs' | 'location' | 'maintenance' | 'notes'>('basics');
 
   const navigateToFilteredList = (status: string) => {
     setInitialListStatus(status);
@@ -2696,10 +2784,12 @@ export default function App() {
       setSelectedStatus(editingAsset.status);
       setHasWarranty(editingAsset.hasWarranty || false);
       setHasPreventiveMaintenance(editingAsset.hasPreventiveMaintenance || false);
+      setActiveFormSection('basics');
     } else {
       setSelectedStatus('Ativo');
       setHasWarranty(false);
       setHasPreventiveMaintenance(false);
+      setActiveFormSection('basics');
     }
   }, [editingAsset, isModalOpen]);
 
@@ -2736,6 +2826,10 @@ export default function App() {
       codBaseBem: formData.get('codBaseBem') as string || '',
       name: formData.get('name') as string,
       tag: formData.get('tag') as string,
+      brand: formData.get('brand') as string || '',
+      model: formData.get('model') as string || '',
+      serialNumber: formData.get('serialNumber') as string || '',
+      description: formData.get('description') as string || '',
       categoria: formData.get('categoria') as CategoriaAtivo,
       filial_id: formData.get('filial_id') as string || null,
       status,
@@ -3368,245 +3462,291 @@ NOTIFY pgrst, 'reload schema';`}
             <span>{categoriaErro}</span>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className={filiais.length > 0 ? "grid grid-cols-3 gap-4" : ""}>
-            <div className={filiais.length > 0 ? "col-span-1" : ""}>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Cód. Contábil (opcional)</label>
-              <input name="codBaseBem" defaultValue={editingAsset?.codBaseBem} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            {filiais.length > 0 && (
-              <div className="col-span-2">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Filial / Unidade</label>
+        <form onSubmit={handleSubmit} className="space-y-3 pb-2">
+          <div className="space-y-2.5">
+            <AccordionItem 
+              id="basics" 
+              title="Informações Básicas" 
+              icon={Box} 
+              isActive={activeFormSection === 'basics'} 
+              onClick={() => setActiveFormSection('basics')}
+            >
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Ativo</label>
+                <input name="name" defaultValue={editingAsset?.name} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Notebook Dell Latitude" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Tag de Patrimônio</label>
+                  <input name="tag" defaultValue={editingAsset?.tag} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="000001" />
+                  <p className="mt-1 text-[9px] text-amber-600 font-medium leading-tight">Use exatamente o que consta na etiqueta física.</p>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
+                  <select name="categoria" defaultValue={editingAsset?.categoria} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    {categorias.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Status do Bem</label>
                 <select 
-                  name="filial_id" 
-                  defaultValue={editingAsset?.filial_id} 
+                  name="status" 
+                  defaultValue={editingAsset?.status} 
+                  onChange={(e) => setSelectedStatus(e.target.value as AssetStatus)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <option value="">Sede / Matriz</option>
-                  {filiais.map(f => (
-                    <option key={f.id} value={f.id}>{f.nome}</option>
-                  ))}
+                  <option value="Ativo">🟢 Ativo (Em uso)</option>
+                  <option value="Em Manutenção">🟠 Em Manutenção / Reparo</option>
+                  <option value="Em andamento">🟣 Em andamento / Processamento</option>
+                  <option value="Emprestado">🔵 Emprestado / Com Terceiros</option>
+                  <option value="Inativo">🔴 Inativo / Baixado</option>
                 </select>
               </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Ativo</label>
-            <input name="name" defaultValue={editingAsset?.name} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Tag de Patrimônio</label>
-              <input name="tag" defaultValue={editingAsset?.tag} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
-              <p className="mt-1 text-[9px] text-amber-600 font-medium">
-                Aviso: digite exatamente o que está escrito na Tag. Ex. 000010
-              </p>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
-              <select name="categoria" defaultValue={editingAsset?.categoria} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                {categorias.map(cat => (
-                  <option key={cat.id} value={cat.name}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Status</label>
-                <select 
-                name="status" 
-                defaultValue={editingAsset?.status} 
-                onChange={(e) => setSelectedStatus(e.target.value as AssetStatus)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              >
-                <option value="Ativo">Ativo</option>
-                <option value="Em Manutenção">Em Manutenção</option>
-                <option value="Emprestado">Emprestado</option>
-                <option value="Em andamento">Em andamento</option>
-                <option value="Inativo">Inativo</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Data de Compra</label>
-              <input name="purchaseDate" type="date" defaultValue={editingAsset?.purchaseDate || new Date().toISOString().split('T')[0]} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col justify-end">
-              <label className="flex items-center gap-2 cursor-pointer mb-2 px-1">
-                <input 
-                  name="hasPreventiveMaintenance" 
-                  type="checkbox" 
-                  checked={hasPreventiveMaintenance}
-                  onChange={(e) => setHasPreventiveMaintenance(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
-                />
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">Manutenção Preventiva?</span>
-              </label>
-            </div>
-            <div className="flex flex-col justify-end">
-              <label className="flex items-center gap-2 cursor-pointer mb-2 px-1">
-                <input 
-                  name="hasWarranty" 
-                  type="checkbox" 
-                  checked={hasWarranty}
-                  onChange={(e) => setHasWarranty(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
-                />
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">Possui Garantia?</span>
-              </label>
-            </div>
-          </div>
+            </AccordionItem>
 
-          <AnimatePresence>
-            {hasPreventiveMaintenance && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden space-y-4"
-              >
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Próxima Manutenção</label>
+            <AccordionItem 
+              id="specs" 
+              title="Especificações Técnicas" 
+              icon={Settings} 
+              isActive={activeFormSection === 'specs'} 
+              onClick={() => setActiveFormSection('specs')}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Marca</label>
+                  <input name="brand" defaultValue={editingAsset?.brand} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Dell, HP, Apple..." />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Modelo</label>
+                  <input name="model" defaultValue={editingAsset?.model} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Vostro 3500, iPhone 13..." />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nº de Série</label>
+                <input name="serialNumber" defaultValue={editingAsset?.serialNumber} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none" placeholder="SN123456789" />
+              </div>
+            </AccordionItem>
+
+            <AccordionItem 
+              id="location" 
+              title="Localização e Financeiro" 
+              icon={MapPin} 
+              isActive={activeFormSection === 'location'} 
+              onClick={() => setActiveFormSection('location')}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Departamento / Sala</label>
+                  <input name="location" defaultValue={editingAsset?.location} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="TI, Recepção, Copa..." />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Cód. Contábil</label>
+                  <input name="codBaseBem" defaultValue={editingAsset?.codBaseBem} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Opcional" />
+                </div>
+              </div>
+              {filiais.length > 0 && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Unidade Responsável</label>
+                  <select 
+                    name="filial_id" 
+                    defaultValue={editingAsset?.filial_id} 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="">Sede / Matriz</option>
+                    {filiais.map(f => (
+                      <option key={f.id} value={f.id}>{f.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Data de Compra</label>
+                  <input name="purchaseDate" type="date" defaultValue={editingAsset?.purchaseDate || new Date().toISOString().split('T')[0]} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor do Bem (BRL)</label>
+                  <input name="value" type="number" step="0.01" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0.00" />
+                </div>
+              </div>
+            </AccordionItem>
+
+            <AccordionItem 
+              id="maintenance" 
+              title="Garantia e Manutenção" 
+              icon={ShieldCheck} 
+              isActive={activeFormSection === 'maintenance'} 
+              onClick={() => setActiveFormSection('maintenance')}
+            >
+              <div className="grid grid-cols-2 gap-3 mb-1">
+                <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-slate-50 rounded-xl border border-slate-100 transition-all hover:bg-blue-50 hover:border-blue-200">
+                  <input 
+                    name="hasPreventiveMaintenance" 
+                    type="checkbox" 
+                    checked={hasPreventiveMaintenance}
+                    onChange={(e) => setHasPreventiveMaintenance(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
+                  />
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">Manutenção</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-slate-50 rounded-xl border border-slate-100 transition-all hover:bg-blue-50 hover:border-blue-200">
+                  <input 
+                    name="hasWarranty" 
+                    type="checkbox" 
+                    checked={hasWarranty}
+                    onChange={(e) => setHasWarranty(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4" 
+                  />
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">Possui Garantia</span>
+                </label>
+              </div>
+
+              <AnimatePresence>
+                {(hasPreventiveMaintenance || hasWarranty) && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden space-y-4 pt-2"
+                  >
+                    {hasPreventiveMaintenance && (
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                        <div>
+                          <label className="block text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1.5">Próxima Revisão</label>
+                          <input 
+                            name="nextMaintenanceDate" 
+                            type="date" 
+                            defaultValue={editingAsset?.nextMaintenanceDate} 
+                            required={hasPreventiveMaintenance}
+                            className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1.5">Intervalo (meses)</label>
+                          <input 
+                            name="maintenanceIntervalMonths" 
+                            type="number" 
+                            min="1"
+                            defaultValue={editingAsset?.maintenanceIntervalMonths} 
+                            className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none" 
+                            placeholder="Ex: 6"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {hasWarranty && (
+                      <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                        <label className="block text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1.5">Vencimento da Garantia</label>
+                        <input 
+                          name="warrantyExpirationDate" 
+                          type="date" 
+                          defaultValue={editingAsset?.warrantyExpirationDate} 
+                          required={hasWarranty}
+                          className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
+                        />
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {selectedStatus === 'Em Manutenção' && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-4 bg-amber-50 rounded-2xl border border-amber-100 space-y-3 pt-2"
+                  >
+                    <div className="flex items-center gap-2 text-amber-700 mb-1">
+                      <AlertTriangle size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Registrar Gasto de Manutenção</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[9px] font-bold text-amber-600 uppercase mb-1">Custo (BRL)</label>
+                        <input name="maintenanceValue" type="number" step="0.01" defaultValue={editingAsset?.maintenanceValue} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500" placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-amber-600 uppercase mb-1">Empresa / Notas</label>
+                        <input name="maintenanceNotes" type="text" defaultValue={editingAsset?.maintenanceNotes} className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500" placeholder="Ex: Oficina X" />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+                {selectedStatus === 'Emprestado' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="overflow-hidden pt-2"
+                  >
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Responsável pelo Empréstimo</label>
                     <input 
-                      name="nextMaintenanceDate" 
-                      type="date" 
-                      defaultValue={editingAsset?.nextMaintenanceDate} 
-                      required={hasPreventiveMaintenance}
-                      className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Se repete em (meses)</label>
-                    <input 
-                      name="maintenanceIntervalMonths" 
-                      type="number" 
-                      min="1"
-                      placeholder="Ex: 6"
-                      defaultValue={editingAsset?.maintenanceIntervalMonths} 
+                      name="assignedTo" 
+                      defaultValue={editingAsset?.assignedTo} 
+                      required={selectedStatus === 'Emprestado'}
+                      placeholder="Ex: Nome do Funcionário ou Tercerizado"
                       className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
                     />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {hasWarranty && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Garantia expira em</label>
-                <input 
-                  name="warrantyExpirationDate" 
-                  type="date" 
-                  defaultValue={editingAsset?.warrantyExpirationDate} 
-                  required={hasWarranty}
-                  className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [color-scheme:light]" 
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor (BRL)</label>
-              <input name="value" type="number" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Departamento</label>
-              <input name="location" defaultValue={editingAsset?.location} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-            </div>
-          </div>
-          <AnimatePresence>
-            {selectedStatus === 'Em Manutenção' && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden space-y-4"
-              >
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor da Manutenção (BRL)</label>
-                    <input 
-                      name="maintenanceValue" 
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      defaultValue={editingAsset?.maintenanceValue}
-                      className="w-full px-3 py-2 bg-slate-50 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Empresa / Local</label>
-                    <input 
-                      name="maintenanceNotes" 
-                      defaultValue={editingAsset?.maintenanceNotes} 
-                      placeholder="Ex: Oficina Central"
-                      className="w-full px-3 py-2 bg-slate-50 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none" 
-                    />
-                  </div>
-                </div>
-                {editingAsset?.maintenanceHistory && editingAsset.maintenanceHistory.length > 0 && (
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <p className="text-[9px] font-bold text-slate-400 uppercase mb-2">Histórico Recente</p>
-                    <div className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar">
-                      {editingAsset.maintenanceHistory.map((h) => (
-                        <div key={h.id} className="flex justify-between text-[11px] text-slate-600 border-b border-white pb-1">
-                          <span>{formatDate(h.date)}</span>
-                          <span className="font-bold text-red-600">-{formatCurrency(h.cost)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
-            {selectedStatus === 'Emprestado' && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Emprestado para</label>
-                <input 
-                  name="assignedTo" 
-                  defaultValue={editingAsset?.assignedTo} 
-                  required={selectedStatus === 'Emprestado'}
-                  placeholder="Ex: Nome do Funcionário ou Departamento"
-                  className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
-                />
-              </motion.div>
-            )}
-            {selectedStatus === 'Inativo' && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Motivo da Inativação</label>
+                {selectedStatus === 'Inativo' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="overflow-hidden pt-2"
+                  >
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Motivo da Inativação (Obrigatório)</label>
+                    <textarea 
+                      name="inactiveReason" 
+                      defaultValue={editingAsset?.inactiveReason} 
+                      required={selectedStatus === 'Inativo'}
+                      placeholder="Descreva o motivo da baixa (Danos, obsolescência, perda...)"
+                      className="w-full px-3 py-2 bg-slate-50 border border-red-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none min-h-[80px] resize-none" 
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </AccordionItem>
+
+            <AccordionItem 
+              id="notes" 
+              title="Observações Gerais" 
+              icon={FileText} 
+              isActive={activeFormSection === 'notes'} 
+              onClick={() => setActiveFormSection('notes')}
+            >
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Notas e detalhes</label>
                 <textarea 
-                  name="inactiveReason" 
-                  defaultValue={editingAsset?.inactiveReason} 
-                  required={selectedStatus === 'Inativo'}
-                  placeholder="Ex: Item avariado sem conserto, obsolescência técnica..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-red-200 ring-2 ring-red-50 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none min-h-[80px]" 
+                  name="description" 
+                  defaultValue={editingAsset?.description} 
+                  rows={4}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none" 
+                  placeholder="Detalhes sobre o estado físico, especificações extras ou qualquer observação relevante..."
                 />
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <button type="submit" className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold text-xs shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all mt-4 tracking-wide uppercase">
-            {editingAsset ? "Atualizar Registro" : "Salvar Ativo"}
-          </button>
+              </div>
+            </AccordionItem>
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <button 
+              type="button"
+              onClick={() => { setIsModalOpen(false); setEditingAsset(null); }}
+              className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-2xl font-bold text-sm tracking-wide hover:bg-slate-50 active:scale-[0.98] transition-all"
+            >
+              CANCELAR
+            </button>
+            <button 
+              type="submit"
+              className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-bold text-sm shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 uppercase tracking-widest"
+            >
+              {editingAsset ? "Atualizar" : "Salvar Ativo"}
+              <Check size={18} />
+            </button>
+          </div>
         </form>
       </Modal>
     </div>

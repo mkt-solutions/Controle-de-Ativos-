@@ -120,6 +120,9 @@ export function useAssets() {
             hasWarranty: a.has_warranty,
             warrantyExpirationDate: a.warranty_expiration_date,
             codBaseBem: a.cod_base_bem,
+            brand: a.brand,
+            model: a.model,
+            serialNumber: a.serial_number,
             createdAt: a.created_at,
             updatedAt: a.updated_at
           };
@@ -410,7 +413,10 @@ NOTIFY pgrst, 'reload schema';`);
       has_preventive_maintenance: !!asset.hasPreventiveMaintenance,
       has_warranty: !!asset.hasWarranty,
       warranty_expiration_date: asset.warrantyExpirationDate || null,
-      cod_base_bem: asset.codBaseBem || null
+      cod_base_bem: asset.codBaseBem || null,
+      brand: asset.brand || null,
+      model: asset.model || null,
+      serial_number: asset.serialNumber || null
     };
 
     console.log('📤 Tentando inserir ativo no Supabase:', newAssetData);
@@ -460,6 +466,9 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
           hasWarranty: data.has_warranty,
           warrantyExpirationDate: data.warranty_expiration_date,
           codBaseBem: data.cod_base_bem,
+          brand: data.brand,
+          model: data.model,
+          serialNumber: data.serial_number,
           createdAt: data.created_at,
           updatedAt: data.updated_at
         };
@@ -545,6 +554,9 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     if (updates.codBaseBem !== undefined) {
       updateData.cod_base_bem = updates.codBaseBem || null;
     }
+    if (updates.brand !== undefined) updateData.brand = updates.brand || null;
+    if (updates.model !== undefined) updateData.model = updates.model || null;
+    if (updates.serialNumber !== undefined) updateData.serial_number = updates.serialNumber || null;
     if (updates.description !== undefined) updateData.description = updates.description;
 
     console.log('📤 Enviando atualização para Supabase:', { id, updateData });
@@ -664,6 +676,9 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
         has_warranty: !!asset.hasWarranty,
         warranty_expiration_date: asset.warrantyExpirationDate || null,
         cod_base_bem: asset.codBaseBem || null,
+        brand: asset.brand || '',
+        model: asset.model || '',
+        serial_number: asset.serialNumber || '',
         description: asset.description || '',
         filial_id: asset.filial_id || null,
         empresa_id: currentEmpresaId
