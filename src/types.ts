@@ -5,7 +5,7 @@
 
 export type CategoriaAtivo = 'Hardware' | 'Software' | 'Mobiliário' | 'Veículos' | 'Infraestrutura' | 'Outros';
 
-export type AssetStatus = 'Ativo' | 'Em Manutenção' | 'Inativo' | 'Baixado' | 'Emprestado';
+export type AssetStatus = 'Ativo' | 'Em Manutenção' | 'Inativo' | 'Baixado' | 'Emprestado' | 'Em andamento';
 
 export interface Categoria {
   id: string;

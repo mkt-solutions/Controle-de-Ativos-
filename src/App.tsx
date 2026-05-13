@@ -551,7 +551,7 @@ const DashboardView = ({ stats, onMaintenanceClick, onAlertsClick, onViewAll }: 
                   <th className="px-6 py-3">Patrimônio</th>
                   <th className="px-6 py-3">Item</th>
                   <th className="px-6 py-3">Categoria</th>
-                  <th className="px-6 py-4 text-slate-500">Localização</th>
+                  <th className="px-6 py-4 text-slate-500">Departamento</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -656,7 +656,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
           status: 'Ativo' as AssetStatus,
           value: Number(item.Valor || item.value || 0),
           purchaseDate: pDate,
-          location: item.Localizacao || item.location || 'Nao Informado',
+          location: item.Departamento || item.Localizacao || item.location || 'Nao Informado',
           codBaseBem: item['Código Base Bem'] || item.cod_base_bem || item.codBaseBem || '',
           filial_id: filialObj?.id || null,
           maintenanceHistory: [],
@@ -691,7 +691,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Código Base Bem', key: 'codBaseBem', width: 20 },
       { header: 'Filial', key: 'filial_nome', width: 20 },
-      { header: 'Localizacao', key: 'location', width: 20 },
+      { header: 'Departamento', key: 'location', width: 20 },
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data de Compra', key: 'purchaseDate', width: 15 }
@@ -742,7 +742,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
       { header: 'Status', key: 'status', width: 15 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data de Compra', key: 'purchaseDate', width: 15 },
-      { header: 'Localizacao', key: 'location', width: 20 }
+      { header: 'Departamento', key: 'location', width: 20 }
     ];
 
     // Formatar coluna A como texto
@@ -791,6 +791,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
             <option value="Ativo">Ativo</option>
             <option value="Em Manutenção">Em Manutenção</option>
             <option value="Emprestado">Emprestado</option>
+            <option value="Em andamento">Em andamento</option>
             <option value="Inativo">Inativo</option>
           </select>
             <select 
@@ -844,7 +845,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
               <th className="px-6 py-4">Item</th>
               <th className="px-6 py-4">Categoria</th>
               <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Localização</th>
+              <th className="px-6 py-4">Departamento</th>
               <th className="px-6 py-4">Situação</th>
               <th className="px-6 py-4 text-right">Ações</th>
             </tr>
@@ -884,6 +885,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                       asset.status === 'Ativo' ? "bg-emerald-100 text-emerald-700" :
                       asset.status === 'Em Manutenção' ? "bg-amber-100 text-amber-700" :
                       asset.status === 'Emprestado' ? "bg-blue-100 text-blue-700" :
+                      asset.status === 'Em andamento' ? "bg-violet-100 text-violet-700" :
                       "bg-slate-100 text-slate-700"
                     )}>
                       {asset.status}
@@ -1009,11 +1011,11 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
 
                         <div className="space-y-4">
                           <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-2 flex items-center gap-2">
-                             <MapPin size={12} /> Localização & Notas
+                             <MapPin size={12} /> Departamento & Notas
                           </h4>
                           <div className="space-y-3">
                              <div>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase">Local Atual</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase">Departamento</p>
                                 <p className="text-xs text-slate-800">{asset.location}</p>
                              </div>
                              {asset.description && (
@@ -1100,7 +1102,7 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
   })).sort((a, b) => b.value - a.value).slice(0, 5);
 
   // 3. Status
-  const statusData = ['Ativo', 'Em Manutenção', 'Inativo', 'Baixado', 'Emprestado'].map(s => ({
+  const statusData = ['Ativo', 'Em Manutenção', 'Inativo', 'Baixado', 'Emprestado', 'Em andamento'].map(s => ({
     name: s,
     value: assets.filter(a => a.status === s).length
   })).filter(s => s.value > 0);
@@ -1232,7 +1234,7 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Patrimônio', key: 'tag', width: 15 },
       { header: 'Cód. Base Bem', key: 'codBaseBem', width: 20 },
       { header: 'Filial', key: 'filial_nome', width: 20 },
-      { header: 'Localização', key: 'location', width: 20 },
+      { header: 'Departamento', key: 'location', width: 20 },
       { header: 'Responsável', key: 'auditor', width: 20 },
       { header: 'Data Compra', key: 'purchaseDate', width: 15 },
       { header: 'Valor Original', key: 'value', width: 15 },
@@ -1313,8 +1315,8 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Patrimônio', key: 'tag', width: 15 },
       { header: 'Nome do Ativo', key: 'name', width: 30 },
       { header: 'Filial', key: 'filial_nome', width: 20 },
-      { header: 'Localização Esperada', key: 'locExp', width: 25 },
-      { header: 'Localização Atual', key: 'locActual', width: 25 },
+      { header: 'Departamento Esperado', key: 'locExp', width: 25 },
+      { header: 'Departamento Atual', key: 'locActual', width: 25 },
       { header: 'Status Conferência', key: 'status', width: 20 },
       { header: 'Data Última Verificação', key: 'date', width: 20 }
     ];
@@ -3412,7 +3414,7 @@ NOTIFY pgrst, 'reload schema';`}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Status</label>
-              <select 
+                <select 
                 name="status" 
                 defaultValue={editingAsset?.status} 
                 onChange={(e) => setSelectedStatus(e.target.value as AssetStatus)}
@@ -3421,6 +3423,7 @@ NOTIFY pgrst, 'reload schema';`}
                 <option value="Ativo">Ativo</option>
                 <option value="Em Manutenção">Em Manutenção</option>
                 <option value="Emprestado">Emprestado</option>
+                <option value="Em andamento">Em andamento</option>
                 <option value="Inativo">Inativo</option>
               </select>
             </div>
@@ -3517,7 +3520,7 @@ NOTIFY pgrst, 'reload schema';`}
               <input name="value" type="number" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Localização</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Departamento</label>
               <input name="location" defaultValue={editingAsset?.location} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
           </div>
