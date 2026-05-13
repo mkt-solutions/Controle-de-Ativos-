@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, MessageCircle, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -2351,30 +2351,6 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
     saveAs(blob, `Relatorio_Controle_${audit.date.split('T')[0]}.xlsx`);
   };
 
-  const sendToWhatsApp = (audit: AuditRecord) => {
-    const total = audit.allAssetsSnapshot.length;
-    const found = audit.verifiedIds.length;
-    const notFound = audit.allAssetsSnapshot.filter(a => !audit.verifiedIds.includes(a.id));
-
-    let message = `*RELATÓRIO DE CONFERÊNCIA FÍSICA*\n`;
-    message += `📅 Data: ${formatDate(audit.date)}\n`;
-    message += `👤 Responsável: ${audit.auditorName}\n`;
-    if (audit.departamento) message += `🏢 Setor: ${audit.departamento}\n`;
-    message += `✅ Localizados: ${found} / ${total}\n\n`;
-
-    if (notFound.length > 0) {
-      message += `❌ *ITENS NÃO LOCALIZADOS:*\n`;
-      notFound.forEach(item => {
-        message += `• #${item.tag} - ${item.name}\n`;
-      });
-    } else {
-      message += `✨ Todos os itens foram localizados com sucesso!`;
-    }
-
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
-  };
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {error && (
@@ -2536,13 +2512,6 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                 <div key={audit.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md relative group flex flex-col">
                   <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={() => sendToWhatsApp(audit)}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                      title="Enviar por WhatsApp"
-                    >
-                      <MessageCircle size={14} />
-                    </button>
-                    <button 
                       onClick={() => exportToExcel(audit)}
                       className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
                       title="Exportar para Excel"
@@ -2601,18 +2570,12 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                       </div>
                     </div>
                   )}
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="mt-4 flex flex-col gap-2">
                     <button 
                       onClick={() => exportToExcel(audit)}
-                      className="py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] lg:text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                      className="w-full py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] lg:text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
                     >
-                      <Download size={14} /> EXCEL
-                    </button>
-                    <button 
-                      onClick={() => sendToWhatsApp(audit)}
-                      className="py-2 border border-emerald-100 bg-[#25D366]/10 text-[#075E54] rounded-lg text-[10px] lg:text-xs font-bold hover:bg-[#25D366]/20 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <MessageCircle size={14} /> WHATSAPP
+                      <Download size={14} /> EXPORTAR PARA EXCEL
                     </button>
                   </div>
                 </div>
