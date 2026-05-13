@@ -120,20 +120,19 @@ const AccordionItem = ({
         <ChevronDown size={18} />
       </motion.div>
     </button>
-    <AnimatePresence initial={false}>
-      {isActive && (
-        <motion.div
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.3, ease: "easeInOut" }}
-        >
-          <div className="px-5 py-6 space-y-5 bg-white border-t border-slate-50">
-            {children}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <motion.div
+      initial={false}
+      animate={{ 
+        height: isActive ? 'auto' : 0, 
+        opacity: isActive ? 1 : 0
+      }}
+      transition={{ duration: 0.3, ease: "easeInOut" }}
+      className="overflow-hidden"
+    >
+      <div className="px-5 py-6 space-y-5 bg-white border-t border-slate-50">
+        {children}
+      </div>
+    </motion.div>
   </div>
 );
 
@@ -920,6 +919,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
               <th className="px-6 py-4">Item</th>
               <th className="px-6 py-4">Categoria</th>
               <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Unidade</th>
               <th className="px-6 py-4">Departamento</th>
               <th className="px-6 py-4">Situação</th>
               <th className="px-6 py-4 text-right">Ações</th>
@@ -966,6 +966,7 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
                       {asset.status}
                     </span>
                   </td>
+                  <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{asset.filial_nome || 'Sede / Matriz'}</td>
                   <td className="px-6 py-4 text-slate-500">{asset.location}</td>
                   <td className="px-6 py-4">
                     {asset.status === 'Em Manutenção' ? (
@@ -3069,20 +3070,33 @@ export default function App() {
 
         {/* Global Error Banner */}
         <AnimatePresence>
-          {categoriaErro && view !== 'categorias' && (
+          {categoriaErro && (
             <motion.div 
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="bg-red-600 text-white px-6 py-3 flex items-center justify-between gap-4 shadow-lg overflow-hidden shrink-0 relative z-10"
+              className="bg-amber-600 text-white px-6 py-4 flex items-center justify-between gap-6 shadow-xl overflow-hidden shrink-0 relative z-20 border-b border-amber-500"
             >
-              <div className="flex items-center gap-3">
-                <AlertTriangle size={18} />
-                <p className="text-xs font-bold tracking-wide">{categoriaErro}</p>
+              <div className="flex items-center gap-4">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <AlertTriangle size={20} />
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-black tracking-widest opacity-80 leading-none mb-1">Ação Necessária</p>
+                  <p className="text-xs font-bold leading-tight">{categoriaErro}</p>
+                </div>
               </div>
-              <button onClick={() => setCategoriaErro(null)} className="p-1 hover:bg-white/20 rounded">
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => { setView('configuracoes'); setCategoriaErro(null); }}
+                  className="px-5 py-2 bg-white text-amber-700 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-amber-50 transition-all shadow-sm whitespace-nowrap"
+                >
+                  Resolver Agora
+                </button>
+                <button onClick={() => setCategoriaErro(null)} className="p-1.5 hover:bg-white/20 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -3163,7 +3177,16 @@ export default function App() {
                 ) : (
                   <div className="space-y-6">
                     {/* SQL REPAIR SECTION FOR FILIAIS AND AUDITS */}
-                    {(categoriaErro && (categoriaErro.includes('filiais') || categoriaErro.includes('Permissão') || categoriaErro.includes('cod_base_bem') || categoriaErro.includes('audits') || categoriaErro.includes('conferência'))) && (
+                    {(categoriaErro && (
+                      categoriaErro.includes('filiais') || 
+                      categoriaErro.includes('Permissão') || 
+                      categoriaErro.includes('cod_base_bem') || 
+                      categoriaErro.includes('brand') || 
+                      categoriaErro.includes('model') || 
+                      categoriaErro.includes('serial_number') || 
+                      categoriaErro.includes('audits') || 
+                      categoriaErro.includes('conferência')
+                    )) && (
                       <div className="p-8 bg-amber-50 rounded-3xl border border-amber-200 animate-in fade-in slide-in-from-top-4">
                         <div className="flex items-start gap-4">
                           <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-200">
@@ -3195,11 +3218,16 @@ CREATE POLICY "permit_all" ON filiais FOR ALL TO public USING (true) WITH CHECK 
 -- Atualização da tabela de ativos
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS cod_base_bem text;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS brand text;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS model text;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS serial_number text;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE audits ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
+
 GRANT ALL ON assets TO authenticated;
 GRANT ALL ON audits TO authenticated;
 
--- Recarregar cache do esquema
+-- Recarregar cache do esquema (Importante para que o Supabase reconheça as colunas novas)
 NOTIFY pgrst, 'reload schema';`}
                               </pre>
                               <div className="absolute top-4 right-4 text-[9px] font-bold text-slate-500 uppercase tracking-widest bg-slate-800 px-2 py-1 rounded-lg">Clique para selecionar tudo</div>
@@ -3532,7 +3560,7 @@ NOTIFY pgrst, 'reload schema';`}
 
             <AccordionItem 
               id="location" 
-              title="Localização e Financeiro" 
+              title="Departamento e Financeiro" 
               icon={MapPin} 
               isActive={activeFormSection === 'location'} 
               onClick={() => setActiveFormSection('location')}
