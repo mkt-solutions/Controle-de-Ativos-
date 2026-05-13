@@ -2230,6 +2230,7 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
 const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, updateAsset, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, updateAsset: (id: string, data: Partial<Asset>) => Promise<boolean>, error: string | null, clearError: () => void }) => {
   const activeAudit = audits.find(a => !a.isFinalized);
   const [showStartModal, setShowStartModal] = React.useState(false);
+  const [mismatchModal, setMismatchModal] = React.useState<{ assetId: string, assetTag: string, filialName: string, deptoName: string } | null>(null);
   const [auditorName, setAuditorName] = React.useState('');
   const [selectedFilial, setSelectedFilial] = React.useState('TOTAL');
   const [selectedDepto, setSelectedDepto] = React.useState('GERAL');
@@ -2304,21 +2305,13 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
           const assetFilialName = assetFilialId ? (filiais.find(f => f.id === assetFilialId)?.nome || 'Filial Desconhecida') : 'Sede / Matriz';
           const assetDeptoName = assetDepto || 'Não informado';
           
-          const confirmUpdate = window.confirm(
-            `Este ativo não pertence ao setor atual.\n\n` +
-            `Local Atual do Ativo:\n` +
-            `Unidade: ${assetFilialName}\n` +
-            `Departamento: ${assetDeptoName}\n\n` +
-            `Deseja mudar o local do ativo para o atual?`
-          );
-
-          if (confirmUpdate) {
-            // Update asset location to match current audit parameters
-            updateAsset(asset.id, {
-              filial_id: activeAudit.filial_id || null,
-              location: activeAudit.departamento === 'Geral / Todos' ? asset.location : activeAudit.departamento
-            });
-          }
+          setMismatchModal({
+            assetId: asset.id,
+            assetTag: asset.tag,
+            filialName: assetFilialName,
+            deptoName: assetDeptoName
+          });
+          return;
         } else {
           playBeep('success');
         }
@@ -2726,6 +2719,64 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
             Começar Agora <Check size={18} />
           </button>
         </form>
+      </Modal>
+
+      {/* Mismatch Alert Modal */}
+      <Modal 
+        isOpen={!!mismatchModal} 
+        onClose={() => setMismatchModal(null)}
+        title="Divergência de Localização"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="text-amber-600 mt-1" size={20} />
+              <div>
+                <p className="text-sm font-bold text-amber-900">Este ativo não pertence ao setor atual.</p>
+                <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                  O patrimônio <span className="font-bold">#{mismatchModal?.assetTag}</span> está registrado em:
+                </p>
+                <div className="mt-2 text-xs text-amber-900 space-y-1">
+                  <p>• Unidade: <span className="font-bold">{mismatchModal?.filialName}</span></p>
+                  <p>• Departamento: <span className="font-bold">{mismatchModal?.deptoName}</span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-sm text-slate-700 font-medium text-center">Deseja mudar o local do ativo para o local atual?</p>
+
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button 
+              onClick={() => {
+                if (mismatchModal && activeAudit) {
+                  updateAsset(mismatchModal.assetId, {
+                    filial_id: activeAudit.filial_id || null,
+                    location: activeAudit.departamento === 'Geral/Todos' || activeAudit.departamento === 'Geral / Todos' ? mismatchModal.deptoName : activeAudit.departamento
+                  });
+                  toggleAssetAudit(activeAudit.id, mismatchModal.assetId);
+                  setMismatchModal(null);
+                  playBeep('success');
+                }
+              }}
+              className="py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all uppercase tracking-widest"
+            >
+              Sim
+            </button>
+            <button 
+              onClick={() => {
+                if (mismatchModal && activeAudit) {
+                  toggleAssetAudit(activeAudit.id, mismatchModal.assetId);
+                  setMismatchModal(null);
+                  playBeep('success');
+                }
+              }}
+              className="py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-200 transition-all uppercase tracking-widest"
+            >
+              Não
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
