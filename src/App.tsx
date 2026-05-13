@@ -1479,30 +1479,36 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       { header: 'Data Última Verificação', key: 'date', width: 20 }
     ];
 
-    const latestAuditsByFilial = new Map<string | null, AuditRecord>();
-    audits.filter(a => a.isFinalized).forEach(audit => {
-      const fid = audit.filial_id || null;
-      const existing = latestAuditsByFilial.get(fid);
-      if (!existing || new Date(audit.date).getTime() > new Date(existing.date).getTime()) {
-        latestAuditsByFilial.set(fid, audit);
-      }
-    });
-
-    const allLatestAuditItems: any[] = [];
-    latestAuditsByFilial.forEach((audit) => {
-      audit.allAssetsSnapshot.forEach(item => {
-        const found = audit.verifiedIds.includes(item.id);
-        const originalAsset = assets.find(a => a.id === item.id);
-        allLatestAuditItems.push({
-          tag: item.tag,
-          name: item.name,
-          filial_nome: originalAsset?.filial_nome || 'Sede / Matriz',
-          locExp: item.location,
-          locActual: found ? item.location : 'NÃO LOCALIZADO',
-          status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
-          date: new Date(audit.date)
+    const latestStatusByAsset = new Map<string, { status: string, date: Date, locExp: string, locActual: string }>();
+    
+    // Process all finalized audits chronologically to get the most recent state for each asset
+    [...audits]
+      .filter(a => a.isFinalized)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .forEach(audit => {
+        audit.allAssetsSnapshot.forEach(item => {
+          const found = audit.verifiedIds.includes(item.id);
+          const originalAsset = assets.find(a => a.id === item.id);
+          latestStatusByAsset.set(item.id, {
+            status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
+            date: new Date(audit.date),
+            locExp: item.location,
+            locActual: found ? (originalAsset?.location || item.location) : 'NÃO LOCALIZADO'
+          });
         });
       });
+
+    const allLatestAuditItems = assets.map(asset => {
+      const auditInfo = latestStatusByAsset.get(asset.id);
+      return {
+        tag: asset.tag,
+        name: asset.name,
+        filial_nome: asset.filial_nome || 'Sede / Matriz',
+        locExp: auditInfo?.locExp || asset.location,
+        locActual: auditInfo?.locActual || 'NÃO CONFERIDO',
+        status: auditInfo?.status || 'PENDENTE',
+        date: auditInfo?.date || null
+      };
     });
 
     // Ordenar itens do inventário por filial
@@ -1525,9 +1531,10 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       ws.getRow(1).font = { bold: true };
       ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
 
-      // Formatting currency columns
+      // Formatting currency and applying conditional styles
       ws.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return;
+        
         row.eachCell((cell, colNumber) => {
           const header = ws.getColumn(colNumber).header as string;
           if (header?.includes('Valor') || header?.includes('Depreciação') || header?.includes('Original') || header?.includes('Atual') || header?.includes('Mensal')) {
@@ -1537,6 +1544,31 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
             cell.numFmt = 'dd/mm/yyyy';
           }
         });
+
+        // Special styles for Inventário
+        if (ws.name === 'Inventário') {
+          const locExp = row.getCell(4).value;
+          const locActual = row.getCell(5).value;
+          const status = row.getCell(6).value;
+
+          if (status === 'NÃO ENCONTRADO') {
+            row.getCell(6).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFC7CE' } // Light Red
+            };
+            row.getCell(6).font = { color: { argb: 'FF9C0006' }, bold: true };
+          }
+
+          if (status === 'ENCONTRADO' && locActual !== locExp) {
+            row.getCell(5).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFEB9C' } // Yellow
+            };
+            row.getCell(5).font = { color: { argb: 'FF9C6500' }, bold: true };
+          }
+        }
       });
     });
 
