@@ -67,7 +67,7 @@ export interface AuditRecord {
   auditorName: string;
   auditor_user_id?: string;
   verifiedIds: string[];
-  allAssetsSnapshot: { id: string, name: string, tag: string, categoria: string, value: number, location: string }[];
+  allAssetsSnapshot: { id: string, name: string, tag: string, categoria: string, value: number, location: string, filial_id?: string }[];
   isFinalized: boolean;
   empresa_id: string;
   filial_id?: string;

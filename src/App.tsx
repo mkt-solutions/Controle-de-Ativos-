@@ -2227,7 +2227,7 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
   );
 };
 
-const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, error: string | null, clearError: () => void }) => {
+const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, updateAsset, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, updateAsset: (id: string, data: Partial<Asset>) => Promise<boolean>, error: string | null, clearError: () => void }) => {
   const activeAudit = audits.find(a => !a.isFinalized);
   const [showStartModal, setShowStartModal] = React.useState(false);
   const [auditorName, setAuditorName] = React.useState('');
@@ -2259,14 +2259,70 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
     // The tag scanned might include the # prefix or not
     const cleanScan = decodedText.startsWith('#') ? decodedText.slice(1) : decodedText;
     
-    const asset = activeAudit.allAssetsSnapshot.find(a => 
+    let asset = activeAudit.allAssetsSnapshot.find(a => 
       a.tag.toLowerCase() === cleanScan.toLowerCase() || 
       a.tag.toLowerCase() === decodedText.toLowerCase()
     );
 
+    let fromExternalLocation = false;
+    if (!asset) {
+      // Se não encontrou no snapshot (filtro atual), procura na lista total de ativos
+      const globalAsset = assets.find(a => 
+        a.tag.toLowerCase() === cleanScan.toLowerCase() || 
+        a.tag.toLowerCase() === decodedText.toLowerCase()
+      );
+      
+      if (globalAsset) {
+        asset = {
+          id: globalAsset.id,
+          name: globalAsset.name,
+          tag: globalAsset.tag,
+          categoria: globalAsset.categoria,
+          value: globalAsset.value,
+          location: globalAsset.location,
+          filial_id: globalAsset.filial_id
+        };
+        fromExternalLocation = true;
+      }
+    }
+
     if (asset) {
       if (!activeAudit.verifiedIds.includes(asset.id)) {
-        playBeep('success');
+        // Check for mismatch in filial or department
+        const auditFilialId = activeAudit.filial_id || null;
+        const auditDepto = activeAudit.departamento === 'Geral / Todos' ? null : activeAudit.departamento;
+        
+        const assetFilialId = asset.filial_id || null;
+        const assetDepto = asset.location || null;
+
+        const isFilialMismatch = auditFilialId !== assetFilialId;
+        // Se o inventário for por departamento específico, checamos
+        const isDeptoMismatch = auditDepto && assetDepto !== auditDepto;
+
+        if (isFilialMismatch || isDeptoMismatch || fromExternalLocation) {
+          playBeep('neutral');
+          const assetFilialName = assetFilialId ? (filiais.find(f => f.id === assetFilialId)?.nome || 'Filial Desconhecida') : 'Sede / Matriz';
+          const assetDeptoName = assetDepto || 'Não informado';
+          
+          const confirmUpdate = window.confirm(
+            `Este ativo não pertence ao setor atual.\n\n` +
+            `Local Atual do Ativo:\n` +
+            `Unidade: ${assetFilialName}\n` +
+            `Departamento: ${assetDeptoName}\n\n` +
+            `Deseja mudar o local do ativo para o atual?`
+          );
+
+          if (confirmUpdate) {
+            // Update asset location to match current audit parameters
+            updateAsset(asset.id, {
+              filial_id: activeAudit.filial_id || null,
+              location: activeAudit.departamento === 'Geral / Todos' ? asset.location : activeAudit.departamento
+            });
+          }
+        } else {
+          playBeep('success');
+        }
+
         toggleAssetAudit(activeAudit.id, asset.id);
       } else {
         playBeep('neutral');
@@ -2274,7 +2330,7 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
     } else {
       playBeep('error');
     }
-  }, [activeAudit, toggleAssetAudit]);
+  }, [activeAudit, toggleAssetAudit, filiais, updateAsset, assets]);
 
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2305,14 +2361,34 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
       { header: 'Responsavel', key: 'auditor', width: 20 }
     ];
 
-    audit.allAssetsSnapshot.forEach(item => {
+    const allIncludedItems = [...audit.allAssetsSnapshot];
+    
+    // Adicionar itens verificados que não estavam no snapshot (ex: de outras unidades)
+    audit.verifiedIds.forEach(vid => {
+      if (!allIncludedItems.some(item => item.id === vid)) {
+        const globalAsset = assets.find(a => a.id === vid);
+        if (globalAsset) {
+          allIncludedItems.push({
+            id: globalAsset.id,
+            name: `${globalAsset.name} (Fora do Setor)`,
+            tag: globalAsset.tag,
+            categoria: globalAsset.categoria,
+            value: globalAsset.value,
+            location: globalAsset.location,
+            filial_id: globalAsset.filial_id
+          });
+        }
+      }
+    });
+
+    allIncludedItems.forEach(item => {
       const isVerified = audit.verifiedIds.includes(item.id);
       const row = worksheet.addRow({
         tag: `#${item.tag}`,
         status: isVerified ? 'LOCALIZADO' : 'NAO LOCALIZADO',
         name: item.name,
         categoria: item.categoria,
-        filial: audit.filial_id ? `Filial: ${audit.filial_nome}` : (audit.filial_nome || 'Sede'),
+        filial: item.filial_id ? `Filial: ${filiais.find(f => f.id === item.filial_id)?.nome || 'N/A'}` : 'Sede',
         depto: item.location || 'N/A',
         value: item.value,
         date: formatDate(audit.date),
@@ -3343,6 +3419,7 @@ export default function App() {
               filiais={filiais}
               startAudit={startAudit} 
               toggleAssetAudit={toggleAssetAudit} 
+              updateAsset={updateAsset}
               finalizeAudit={finalizeAudit} 
               deleteAudit={deleteAudit} 
               error={categoriaErro}

@@ -743,7 +743,8 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       tag: a.tag,
       categoria: a.categoria,
       value: a.value,
-      location: a.location
+      location: a.location,
+      filial_id: a.filial_id
     }));
 
     const newAuditData: any = {
