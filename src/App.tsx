@@ -49,6 +49,9 @@ const playBeep = (type: 'success' | 'error' | 'neutral' = 'success') => {
   }
 };
 
+const normalizeString = (str: string) => 
+  str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
+
 // --- Components ---
 
 const SidebarItem = ({ icon: Icon, label, active, onClick }: { icon: any, label: string, active?: boolean, onClick: () => void }) => (
@@ -732,8 +735,9 @@ const AssetListView = ({ assets, categorias, filiais, initialStatusFilter, onDel
   };
 
   const filtered = assets.filter(a => {
-    const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase()) || 
-                          a.tag.toLowerCase().includes(search.toLowerCase());
+    const normalizedSearch = normalizeString(search);
+    const matchesSearch = normalizeString(a.name).includes(normalizedSearch) || 
+                          normalizeString(a.tag).includes(normalizedSearch);
     const matchesCategoria = filterCategoria === 'all' || a.categoria === filterCategoria;
     const matchesStatus = filterStatus === 'all' || a.status === filterStatus;
     return matchesSearch && matchesCategoria && matchesStatus;
@@ -3027,17 +3031,31 @@ export default function App() {
             <h2 className="text-base lg:text-lg font-bold text-slate-800 leading-none truncate min-w-fit">
               {view === 'dashboard' ? 'Painel Geral' : view === 'list' ? 'Inventário' : view === 'reports' ? 'Relatórios' : view === 'audit' ? 'Controle Físico' : view === 'plans' ? 'Nossos Planos' : 'Configurações'}
             </h2>
-            <div className="relative hidden md:block w-80">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+            <div className="relative hidden md:flex items-center gap-2">
+              <div className="relative w-80">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                  <Search size={16} />
+                </span>
+                <input 
+                  type="text" 
+                  placeholder="Buscar ativos..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setView('list');
+                    }
+                  }}
+                  className="w-full pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ring-inset outline-none transition-all" 
+                />
+              </div>
+              <button 
+                onClick={() => setView('list')}
+                className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all"
+                title="Executar busca"
+              >
                 <Search size={16} />
-              </span>
-              <input 
-                type="text" 
-                placeholder="Buscar ativos..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-1.5 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ring-inset outline-none transition-all" 
-              />
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2 lg:gap-4 shrink-0">
@@ -3054,17 +3072,30 @@ export default function App() {
 
         {/* Mobile Search Bar (only shown on small screens) */}
         <div className="p-4 bg-white border-b border-slate-100 md:hidden block shrink-0">
-          <div className="relative w-full">
-            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
-              <Search size={16} />
-            </span>
-            <input 
-              type="text" 
-              placeholder="Buscar ativos..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ring-inset outline-none transition-all" 
-            />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+                <Search size={16} />
+              </span>
+              <input 
+                type="text" 
+                placeholder="Buscar ativos..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setView('list');
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ring-inset outline-none transition-all" 
+              />
+            </div>
+            <button 
+              onClick={() => setView('list')}
+              className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-all"
+            >
+              <Search size={18} />
+            </button>
           </div>
         </div>
 
@@ -3113,7 +3144,11 @@ export default function App() {
           )}
           {view === 'list' && (
             <AssetListView 
-              assets={assets.filter(a => a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.tag.toLowerCase().includes(searchTerm.toLowerCase()))} 
+              assets={assets.filter(a => {
+                const normalizedSearch = normalizeString(searchTerm);
+                return normalizeString(a.name).includes(normalizedSearch) || 
+                       normalizeString(a.tag).includes(normalizedSearch);
+              })} 
               categorias={categorias}
               filiais={filiais}
               initialStatusFilter={initialListStatus}
