@@ -1486,15 +1486,37 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
       .filter(a => a.isFinalized)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .forEach(audit => {
+        // 1. Process items that WERE in the snapshot for this audit
         audit.allAssetsSnapshot.forEach(item => {
           const found = audit.verifiedIds.includes(item.id);
           const originalAsset = assets.find(a => a.id === item.id);
+          
+          // Actual location is where it was found (audit department) or snapshot location if it's a general audit
+          const actualLoc = found 
+            ? (audit.departamento === 'Geral / Todos' || !audit.departamento ? (originalAsset?.location || item.location) : audit.departamento)
+            : 'NÃO LOCALIZADO';
+
           latestStatusByAsset.set(item.id, {
             status: found ? 'ENCONTRADO' : 'NÃO ENCONTRADO',
             date: new Date(audit.date),
             locExp: item.location,
-            locActual: found ? (originalAsset?.location || item.location) : 'NÃO LOCALIZADO'
+            locActual: actualLoc
           });
+        });
+
+        // 2. Process items that were verified but NOT in the snapshot (found elsewhere)
+        audit.verifiedIds.forEach(assetId => {
+          if (!audit.allAssetsSnapshot.some(item => item.id === assetId)) {
+            const originalAsset = assets.find(a => a.id === assetId);
+            if (originalAsset) {
+              latestStatusByAsset.set(assetId, {
+                status: 'ENCONTRADO',
+                date: new Date(audit.date),
+                locExp: originalAsset.location,
+                locActual: audit.departamento === 'Geral / Todos' || !audit.departamento ? 'Externo' : audit.departamento
+              });
+            }
+          }
         });
       });
 
