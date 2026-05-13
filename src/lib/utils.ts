@@ -15,3 +15,7 @@ export function formatCurrency(value: number) {
 export function formatDate(dateString: string) {
   return new Intl.DateTimeFormat('pt-BR').format(new Date(dateString));
 }
+
+export function normalizeString(str: string) {
+  return str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
+}

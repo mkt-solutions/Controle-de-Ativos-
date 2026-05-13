@@ -72,6 +72,7 @@ export interface AuditRecord {
   empresa_id: string;
   filial_id?: string;
   filial_nome?: string;
+  departamento?: string;
 }
 
 export interface AssetStats {

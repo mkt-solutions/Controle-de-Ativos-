@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Asset, AuditRecord, Categoria, Filial } from './types';
 import { supabase } from './lib/supabase';
+import { normalizeString } from './lib/utils';
 
 export function useAssets() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -137,7 +138,8 @@ export function useAssets() {
             verifiedIds: audit.verified_ids || [],
             allAssetsSnapshot: audit.all_assets_snapshot,
             isFinalized: audit.is_finalized,
-            filial_nome: audit.filial_id ? (filialObj?.nome || 'Filial') : 'Sede / Matriz'
+            filial_nome: audit.filial_id ? (filialObj?.nome || 'Filial') : 'Sede / Matriz',
+            departamento: audit.departamento
           };
         }));
       }
@@ -701,7 +703,7 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     return 0;
   };
 
-  const startAudit = async (auditorName: string, filterType: string = 'TOTAL') => {
+  const startAudit = async (auditorName: string, filterType: string = 'TOTAL', departamento: string = 'GERAL') => {
     if (!empresaId) return;
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -714,14 +716,18 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     if (filterType === 'MATRIZ') {
       filteredAssets = assets.filter(a => !a.filial_id);
       filial_nome_display = 'Sede / Matriz';
-      // No banco vamos marcar como null para representar a sede se necessário, 
-      // ou usar um marcador se a coluna for obrigatória e tivermos IDs.
-      // Aqui, 'null' na coluna filial_id geralmente significa sede.
     } else if (filterType !== 'TOTAL' && filterType) {
       filteredAssets = assets.filter(a => a.filial_id === filterType);
       filial_id_to_save = filterType;
       const filialFound = filiais.find(f => f.id === filterType);
       filial_nome_display = filialFound?.nome || 'Filial';
+    }
+
+    // Filtro adicional por departamento
+    if (departamento !== 'GERAL' && departamento !== 'TODOS') {
+      filteredAssets = filteredAssets.filter(a => 
+        normalizeString(a.location) === normalizeString(departamento)
+      );
     }
 
     const allAssetsSnapshot = filteredAssets.map(a => ({ 
@@ -741,7 +747,8 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       all_assets_snapshot: allAssetsSnapshot,
       is_finalized: false,
       empresa_id: empresaId,
-      filial_id: filial_id_to_save
+      filial_id: filial_id_to_save,
+      departamento: departamento === 'GERAL' || departamento === 'TODOS' ? 'Geral / Todos' : departamento
     };
 
     const { data, error } = await supabase

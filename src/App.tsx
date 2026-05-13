@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
 import { Asset, AssetStatus, CategoriaAtivo, Categoria, AuditRecord, Filial } from './types';
 import { supabase } from './lib/supabase';
-import { cn, formatCurrency, formatDate } from './lib/utils';
+import { cn, formatCurrency, formatDate, normalizeString } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 // Utilitários de Áudio para o Scanner
@@ -48,9 +48,6 @@ const playBeep = (type: 'success' | 'error' | 'neutral' = 'success') => {
     console.warn('Áudio não suportado:', err);
   }
 };
-
-const normalizeString = (str: string) => 
-  str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
 
 // --- Components ---
 
@@ -2086,12 +2083,31 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
   );
 };
 
-const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, error, clearError }: { audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, error: string | null, clearError: () => void }) => {
+const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, error: string | null, clearError: () => void }) => {
   const activeAudit = audits.find(a => !a.isFinalized);
   const [showStartModal, setShowStartModal] = React.useState(false);
   const [auditorName, setAuditorName] = React.useState('');
   const [selectedFilial, setSelectedFilial] = React.useState('TOTAL');
+  const [selectedDepto, setSelectedDepto] = React.useState('GERAL');
   const [isScannerOpen, setIsScannerOpen] = React.useState(false);
+
+  // Filter assets based on selectedFilial
+  const assetsInFilial = React.useMemo(() => {
+    if (selectedFilial === 'TOTAL') return assets;
+    if (selectedFilial === 'MATRIZ') return assets.filter(a => !a.filial_id);
+    return assets.filter(a => a.filial_id === selectedFilial);
+  }, [assets, selectedFilial]);
+
+  // Extract unique departments (locations) from those assets
+  const departmentsList = React.useMemo(() => {
+    const unique = Array.from(new Set(assetsInFilial.map(a => a.location).filter(Boolean)));
+    return unique.sort();
+  }, [assetsInFilial]);
+
+  // Reset selectedDepto when selectedFilial changes
+  React.useEffect(() => {
+    setSelectedDepto('GERAL');
+  }, [selectedFilial]);
 
   const handleScan = React.useCallback((decodedText: string) => {
     if (!activeAudit) return;
@@ -2119,10 +2135,11 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (auditorName.trim()) {
-      const success = await startAudit(auditorName.trim(), selectedFilial);
+      const success = await startAudit(auditorName.trim(), selectedFilial, selectedDepto);
       if (success) {
         setAuditorName('');
         setSelectedFilial('TOTAL');
+        setSelectedDepto('GERAL');
         setShowStartModal(false);
       }
     }
@@ -2138,6 +2155,7 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
       { header: 'Item', key: 'name', width: 30 },
       { header: 'Categoria', key: 'categoria', width: 20 },
       { header: 'Unidade / Filial', key: 'filial', width: 25 },
+      { header: 'Departamento', key: 'depto', width: 25 },
       { header: 'Valor', key: 'value', width: 15 },
       { header: 'Data da Leitura', key: 'date', width: 20 },
       { header: 'Responsavel', key: 'auditor', width: 20 }
@@ -2151,6 +2169,7 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
         name: item.name,
         categoria: item.categoria,
         filial: audit.filial_id ? `Filial: ${audit.filial_nome}` : (audit.filial_nome || 'Sede'),
+        depto: item.location || 'N/A',
         value: item.value,
         date: formatDate(audit.date),
         auditor: audit.auditorName || 'N/A'
@@ -2196,6 +2215,7 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
     let message = `*RELATÓRIO DE CONFERÊNCIA FÍSICA*\n`;
     message += `📅 Data: ${formatDate(audit.date)}\n`;
     message += `👤 Responsável: ${audit.auditorName}\n`;
+    if (audit.departamento) message += `🏢 Setor: ${audit.departamento}\n`;
     message += `✅ Localizados: ${found} / ${total}\n\n`;
 
     if (notFound.length > 0) {
@@ -2239,6 +2259,11 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
                   <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase text-[9px]">
                     {activeAudit.filial_id ? `Filial: ${activeAudit.filial_nome}` : (activeAudit.filial_nome || 'Sede')}
                   </span>
+                  {activeAudit.departamento && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-bold uppercase text-[9px]">
+                      {activeAudit.departamento}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -2402,6 +2427,11 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
                       <p className="text-[10px] text-blue-600 uppercase font-bold tracking-tighter">
                         {audit.filial_id ? `Filial: ${audit.filial_nome}` : (audit.filial_nome || 'Sede')}
                       </p>
+                      {audit.departamento && (
+                        <p className="text-[10px] text-slate-500 uppercase font-black tracking-tighter">
+                          Depto: {audit.departamento}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
@@ -2485,6 +2515,24 @@ const AuditView = ({ audits, filiais, startAudit, toggleAssetAudit, finalizeAudi
               {selectedFilial === 'TOTAL' ? 'Serão listados TODOS os ativos cadastrados.' : 
                selectedFilial === 'MATRIZ' ? 'Serão listados apenas ativos sem filial vinculada.' : 
                'Serão listados apenas os ativos vinculados a esta unidade.'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Departamento / Setor</label>
+            <select 
+              value={selectedDepto}
+              onChange={(e) => setSelectedDepto(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none"
+            >
+              <option value="GERAL">Todos os Departamentos</option>
+              {departmentsList.map(depto => (
+                <option key={depto} value={depto}>{depto}</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[9px] text-slate-400 font-medium px-0.5 italic">
+              {selectedDepto === 'GERAL' ? 'Serão listados ativos de todos os setores da unidade selecionada.' : 
+               `Serão listados apenas ativos localizados em: ${selectedDepto}`}
             </p>
           </div>
 
@@ -3172,6 +3220,7 @@ export default function App() {
           )}
           {view === 'audit' && (
             <AuditView 
+              assets={assets}
               audits={audits} 
               filiais={filiais}
               startAudit={startAudit} 
@@ -3258,6 +3307,7 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS model text;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS serial_number text;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE audits ADD COLUMN IF NOT EXISTS filial_id uuid REFERENCES filiais(id) ON DELETE SET NULL;
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS departamento text;
 
 GRANT ALL ON assets TO authenticated;
 GRANT ALL ON audits TO authenticated;
