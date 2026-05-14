@@ -2505,8 +2505,8 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                   )}
                 >
                   {isScannerOpen ? <X size={14} /> : <Scan size={14} />} 
-                  <span className="hidden xs:inline">{isScannerOpen ? 'FECHAR LER' : 'LER CÓDIGO'}</span>
-                  <span className="xs:hidden">{isScannerOpen ? 'FECHAR' : 'LER'}</span>
+                  <span className="hidden xs:inline">{isScannerOpen ? 'PAUSAR LEITURA' : 'LER CÓDIGO'}</span>
+                  <span className="xs:hidden">{isScannerOpen ? 'PAUSAR' : 'LER'}</span>
                 </button>
                 <button 
                   onClick={() => finalizeAudit(activeAudit.id)}
@@ -2519,7 +2519,7 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                   className="px-3 py-2 bg-white border border-red-200 text-red-600 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-red-50 transition-all flex items-center gap-2"
                   title="Desistir da leitura e apagar sessão atual"
                 >
-                   <Trash2 size={14} /> <span className="hidden xs:inline">VOLTAR / CANCELAR</span><span className="xs:hidden">VOLTAR</span>
+                   <Trash2 size={14} /> <span className="hidden xs:inline">REINICIAR LEITURA</span><span className="xs:hidden">REINICIAR</span>
                 </button>
               </div>
             </div>
