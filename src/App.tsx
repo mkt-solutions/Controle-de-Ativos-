@@ -1491,9 +1491,11 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
           const found = audit.verifiedIds.includes(item.id);
           const originalAsset = assets.find(a => a.id === item.id);
           
+          const isGeneral = audit.departamento === 'Geral / Todos' || audit.departamento === 'Geral/Todos' || !audit.departamento;
+          
           // Actual location is where it was found (audit department) or snapshot location if it's a general audit
           const actualLoc = found 
-            ? (audit.departamento === 'Geral / Todos' || !audit.departamento ? (originalAsset?.location || item.location) : audit.departamento)
+            ? (isGeneral ? (originalAsset?.location || item.location) : audit.departamento)
             : 'NÃO LOCALIZADO';
 
           latestStatusByAsset.set(item.id, {
@@ -1509,11 +1511,12 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
           if (!audit.allAssetsSnapshot.some(item => item.id === assetId)) {
             const originalAsset = assets.find(a => a.id === assetId);
             if (originalAsset) {
+              const isGeneral = audit.departamento === 'Geral / Todos' || audit.departamento === 'Geral/Todos' || !audit.departamento;
               latestStatusByAsset.set(assetId, {
                 status: 'ENCONTRADO',
                 date: new Date(audit.date),
                 locExp: originalAsset.location,
-                locActual: audit.departamento === 'Geral / Todos' || !audit.departamento ? 'Externo' : audit.departamento
+                locActual: isGeneral ? 'Externo / Outro Local' : audit.departamento
               });
             }
           }
@@ -2602,41 +2605,57 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
         </div>
       )}
 
-      {audits.length > 0 && audits.some(a => a.isFinalized) && (
+      {audits.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest px-1 flex items-center gap-2">
             <History size={14} /> Histórico de Verificações
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {audits.filter(a => a.isFinalized).map((audit) => {
+            {[...audits].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((audit) => {
               const totalExpected = audit.allAssetsSnapshot.length;
               const outOfSectorCount = audit.verifiedIds.filter(vid => !audit.allAssetsSnapshot.some(item => item.id === vid)).length;
               const verifiedInSectorCount = audit.verifiedIds.length - outOfSectorCount;
               const pendingCount = Math.max(0, totalExpected - verifiedInSectorCount);
+              const isInProgress = !audit.isFinalized;
 
               return (
-                <div key={audit.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md relative group flex flex-col">
-                  <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={() => exportToExcel(audit)}
-                      className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
-                      title="Exportar para Excel"
-                    >
-                      <Download size={14} />
-                    </button>
-                    <button 
-                      onClick={() => deleteAudit(audit.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                <div key={audit.id} className={cn(
+                  "bg-white p-5 rounded-xl border shadow-sm transition-all hover:shadow-md relative group flex flex-col",
+                  isInProgress ? "border-amber-200 bg-amber-50/60 ring-1 ring-amber-100" : "border-slate-200"
+                )}>
+                  <div className="absolute top-4 right-4 flex gap-1 opacity-100 transition-opacity">
+                    {!isInProgress && (
+                      <button 
+                        onClick={() => exportToExcel(audit)}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all"
+                        title="Exportar para Excel"
+                      >
+                        <Download size={14} />
+                      </button>
+                    )}
+                    {!isInProgress && (
+                      <button 
+                        onClick={() => deleteAudit(audit.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3 mb-4">
+                  
+                  {isInProgress && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 bg-amber-500 text-white rounded-full text-[11px] font-black uppercase tracking-widest animate-pulse border-2 border-white shadow-md z-10">
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                      Em Progresso
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 mb-4 mt-2">
                     <div className={cn(
                       "p-2 rounded-lg",
-                      pendingCount === 0 ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                      isInProgress ? "bg-amber-100 text-amber-600" : (pendingCount === 0 ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600")
                     )}>
-                      <ClipboardCheck size={18} />
+                      {isInProgress ? <Clock size={18} className="animate-spin-slow" /> : <ClipboardCheck size={18} />}
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-800">{formatDate(audit.date)}</p>
@@ -2684,14 +2703,16 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                       </div>
                     </div>
                   )}
-                  <div className="mt-4 flex flex-col gap-2">
-                    <button 
-                      onClick={() => exportToExcel(audit)}
-                      className="w-full py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] lg:text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Download size={14} /> EXPORTAR PARA EXCEL
-                    </button>
-                  </div>
+                  {!isInProgress && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <button 
+                        onClick={() => exportToExcel(audit)}
+                        className="w-full py-2 border border-emerald-100 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] lg:text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Download size={14} /> EXPORTAR PARA EXCEL
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
