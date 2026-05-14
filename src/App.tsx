@@ -3118,7 +3118,7 @@ export default function App() {
   const [hasPreventiveMaintenance, setHasPreventiveMaintenance] = React.useState<boolean>(false);
   const [initialListStatus, setInitialListStatus] = React.useState<string>('all');
   const [showAlertsModal, setShowAlertsModal] = React.useState(false);
-  const [activeFormSection, setActiveFormSection] = React.useState<'basics' | 'specs' | 'location' | 'maintenance' | 'notes'>('basics');
+  const [activeFormSection, setActiveFormSection] = React.useState<'basics' | 'specs' | 'location' | 'maintenance' | 'notes' | null>('basics');
 
   const navigateToFilteredList = (status: string) => {
     setInitialListStatus(status);
@@ -3206,6 +3206,8 @@ export default function App() {
         if (success) {
           setIsModalOpen(false);
           setEditingAsset(null);
+        } else {
+          setActiveFormSection('basics');
         }
       });
     } else {
@@ -3213,6 +3215,8 @@ export default function App() {
         if (success) {
           setIsModalOpen(false);
           setEditingAsset(null);
+        } else {
+          setActiveFormSection('basics');
         }
       });
     }
@@ -3895,7 +3899,7 @@ NOTIFY pgrst, 'reload schema';`}
               title="Informações Básicas" 
               icon={Box} 
               isActive={activeFormSection === 'basics'} 
-              onClick={() => setActiveFormSection('basics')}
+              onClick={() => setActiveFormSection(activeFormSection === 'basics' ? null : 'basics')}
             >
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Nome do Ativo</label>
@@ -3909,7 +3913,8 @@ NOTIFY pgrst, 'reload schema';`}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Categoria</label>
-                  <select name="categoria" defaultValue={editingAsset?.categoria} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                  <select name="categoria" defaultValue={editingAsset?.categoria || ""} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" required>
+                    <option value="" disabled={!editingAsset}>Selecione</option>
                     {categorias.map(cat => (
                       <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
@@ -3938,7 +3943,7 @@ NOTIFY pgrst, 'reload schema';`}
               title="Especificações Técnicas" 
               icon={Settings} 
               isActive={activeFormSection === 'specs'} 
-              onClick={() => setActiveFormSection('specs')}
+              onClick={() => setActiveFormSection(activeFormSection === 'specs' ? null : 'specs')}
             >
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -3958,10 +3963,10 @@ NOTIFY pgrst, 'reload schema';`}
 
             <AccordionItem 
               id="location" 
-              title="Departamento e Financeiro" 
+              title="Departamento e Valor" 
               icon={MapPin} 
               isActive={activeFormSection === 'location'} 
-              onClick={() => setActiveFormSection('location')}
+              onClick={() => setActiveFormSection(activeFormSection === 'location' ? null : 'location')}
             >
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -3995,7 +4000,7 @@ NOTIFY pgrst, 'reload schema';`}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Valor do Bem (BRL)</label>
-                  <input name="value" type="number" step="0.01" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="0.00" />
+                  <input name="value" type="number" step="0.01" defaultValue={editingAsset?.value} required className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" placeholder="0.00" />
                 </div>
               </div>
             </AccordionItem>
@@ -4005,7 +4010,7 @@ NOTIFY pgrst, 'reload schema';`}
               title="Garantia e Manutenção" 
               icon={ShieldCheck} 
               isActive={activeFormSection === 'maintenance'} 
-              onClick={() => setActiveFormSection('maintenance')}
+              onClick={() => setActiveFormSection(activeFormSection === 'maintenance' ? null : 'maintenance')}
             >
               <div className="grid grid-cols-2 gap-3 mb-1">
                 <label className="flex items-center gap-2 cursor-pointer p-2.5 bg-slate-50 rounded-xl border border-slate-100 transition-all hover:bg-blue-50 hover:border-blue-200">
@@ -4142,7 +4147,7 @@ NOTIFY pgrst, 'reload schema';`}
               title="Observações Gerais" 
               icon={FileText} 
               isActive={activeFormSection === 'notes'} 
-              onClick={() => setActiveFormSection('notes')}
+              onClick={() => setActiveFormSection(activeFormSection === 'notes' ? null : 'notes')}
             >
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 px-0.5">Notas e detalhes</label>
