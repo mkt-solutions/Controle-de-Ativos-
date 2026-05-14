@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText, ArrowLeft } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -2263,8 +2263,9 @@ const Scanner = ({ onScan }: { onScan: (decodedText: string) => void }) => {
   );
 };
 
-const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, updateAsset, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<boolean>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, updateAsset: (id: string, data: Partial<Asset>) => Promise<boolean>, error: string | null, clearError: () => void }) => {
-  const activeAudit = audits.find(a => !a.isFinalized);
+const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit, updateAsset, error, clearError }: { assets: Asset[], audits: AuditRecord[], filiais: Filial[], startAudit: (name: string, filterType?: string, departamento?: string) => Promise<AuditRecord | null>, toggleAssetAudit: (auditId: string, assetId: string) => void, finalizeAudit: (auditId: string) => void, deleteAudit: (id: string) => void, updateAsset: (id: string, data: Partial<Asset>) => Promise<boolean>, error: string | null, clearError: () => void }) => {
+  const [selectedAuditId, setSelectedAuditId] = React.useState<string | null>(null);
+  const activeAudit = selectedAuditId ? audits.find(a => a.id === selectedAuditId) : null;
   const [showStartModal, setShowStartModal] = React.useState(false);
   const [mismatchModal, setMismatchModal] = React.useState<{ assetId: string, assetTag: string, filialName: string, deptoName: string } | null>(null);
   const [auditorName, setAuditorName] = React.useState('');
@@ -2364,8 +2365,9 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
   const handleStart = async (e: React.FormEvent) => {
     e.preventDefault();
     if (auditorName.trim()) {
-      const success = await startAudit(auditorName.trim(), selectedFilial, selectedDepto);
-      if (success) {
+      const audit = await startAudit(auditorName.trim(), selectedFilial, selectedDepto);
+      if (audit) {
+        setSelectedAuditId(audit.id);
         setAuditorName('');
         setSelectedFilial('TOTAL');
         setSelectedDepto('GERAL');
@@ -2512,6 +2514,12 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
               
               <div className="flex items-center gap-2">
                 <button 
+                  onClick={() => setSelectedAuditId(null)}
+                  className="px-3 py-2 bg-white border border-slate-200 text-slate-700 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
+                >
+                  <ArrowLeft size={14} /> <span className="hidden xs:inline">SAIR DA SESSÃO</span><span className="xs:hidden">SAIR</span>
+                </button>
+                <button 
                   onClick={() => setIsScannerOpen(!isScannerOpen)}
                   className={cn(
                     "px-3 py-2 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-2",
@@ -2523,13 +2531,19 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                   <span className="xs:hidden">{isScannerOpen ? 'PAUSAR' : 'LER'}</span>
                 </button>
                 <button 
-                  onClick={() => finalizeAudit(activeAudit.id)}
+                  onClick={() => {
+                    finalizeAudit(activeAudit.id);
+                    setSelectedAuditId(null);
+                  }}
                   className="px-3 py-2 bg-emerald-600 text-white text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-emerald-700 transition-all flex items-center gap-2"
                 >
                    <Check size={14} /> <span className="hidden xs:inline">FINALIZAR SESSÃO</span><span className="xs:hidden">FINALIZAR</span>
                 </button>
                 <button 
-                  onClick={() => deleteAudit(activeAudit.id)}
+                  onClick={() => {
+                    deleteAudit(activeAudit.id);
+                    setSelectedAuditId(null);
+                  }}
                   className="px-3 py-2 bg-white border border-red-200 text-red-600 text-[10px] lg:text-xs font-bold rounded-lg shadow-sm hover:bg-red-50 transition-all flex items-center gap-2"
                   title="Desistir da leitura e apagar sessão atual"
                 >
@@ -2630,9 +2644,11 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
               const isInProgress = !audit.isFinalized;
 
               return (
-                <div key={audit.id} className={cn(
+                <div key={audit.id} 
+                  onClick={() => isInProgress && setSelectedAuditId(audit.id)}
+                  className={cn(
                   "bg-white p-5 rounded-xl border shadow-sm transition-all hover:shadow-md relative group flex flex-col",
-                  isInProgress ? "border-amber-200 bg-amber-50/60 ring-1 ring-amber-100" : "border-slate-200"
+                  isInProgress ? "border-amber-200 bg-amber-50/60 ring-1 ring-amber-100 cursor-pointer hover:border-amber-400" : "border-slate-200"
                 )}>
                   <div className="absolute top-4 right-4 flex gap-1 opacity-100 transition-opacity">
                     {!isInProgress && (

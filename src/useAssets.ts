@@ -840,8 +840,8 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     return 0;
   };
 
-  const startAudit = async (auditorName: string, filterType: string = 'TOTAL', departamento: string = 'GERAL') => {
-    if (!empresaId) return;
+  const startAudit = async (auditorName: string, filterType: string = 'TOTAL', departamento: string = 'GERAL'): Promise<AuditRecord | null> => {
+    if (!empresaId) return null;
 
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -902,24 +902,25 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       } else {
         setError(`Erro ao iniciar verificação: ${error.message}`);
       }
-      return false;
+      return null;
     }
 
     if (data) {
       const filialObj = filial_id_to_save ? filiais.find(f => f.id === filial_id_to_save) : null;
-      const mapped = {
+      const mapped: AuditRecord = {
         ...data,
         auditorName: data.auditor_name,
         verifiedIds: data.verified_ids || [],
         allAssetsSnapshot: data.all_assets_snapshot,
         isFinalized: data.is_finalized,
         filial_id: data.filial_id,
-        filial_nome: filial_nome_display
+        filial_nome: filial_nome_display,
+        departamento: data.departamento
       };
       setAudits(prev => [mapped, ...prev]);
-      return true;
+      return mapped;
     }
-    return false;
+    return null;
   };
 
   const toggleAssetAudit = async (auditId: string, assetId: string) => {
