@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Asset, AuditRecord, Categoria, Filial } from './types';
 import { supabase } from './lib/supabase';
 import { normalizeString } from './lib/utils';
@@ -174,6 +174,136 @@ export function useAssets() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // REFS for latest lookup data (avoids closure issues in subscriptions)
+  const catsRef = useRef(categorias);
+  const filiaisRef = useRef(filiais);
+  
+  useEffect(() => { catsRef.current = categorias; }, [categorias]);
+  useEffect(() => { filiaisRef.current = filiais; }, [filiais]);
+
+  // REAL-TIME SUBSCRIPTION
+  useEffect(() => {
+    if (!empresaId) return;
+
+    const channelName = `db-sync-${empresaId}`;
+    const syncChannel = supabase.channel(channelName);
+
+    syncChannel
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'assets', filter: `empresa_id=eq.${empresaId}` }, 
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const data = payload.new as any;
+            const catLocal = catsRef.current.find(c => c.id === data.category_id || c.id === (data as any).categoria_id);
+            const filialLocal = filiaisRef.current.find(f => f.id === data.filial_id);
+            
+            const mapped = {
+              ...data,
+              categoria: catLocal?.name || 'Sem Categoria',
+              categoria_id: data.category_id || (data as any).categoria_id,
+              filial_id: data.filial_id,
+              filial_nome: filialLocal?.nome,
+              purchaseDate: data.purchase_date,
+              value: data.value,
+              assignedTo: data.assigned_to,
+              maintenanceNotes: data.maintenance_notes,
+              maintenanceValue: data.maintenance_value,
+              maintenanceHistory: data.maintenance_history || [],
+              inactiveReason: data.inactive_reason,
+              nextMaintenanceDate: data.next_maintenance_date,
+              maintenanceIntervalMonths: data.maintenance_interval_months,
+              hasPreventiveMaintenance: data.has_preventive_maintenance,
+              hasWarranty: data.has_warranty,
+              warrantyExpirationDate: data.warranty_expiration_date,
+              codBaseBem: data.cod_base_bem,
+              brand: data.brand,
+              model: data.model,
+              serialNumber: data.serial_number,
+              createdAt: data.created_at,
+              updatedAt: data.updated_at
+            } as any;
+            
+            setAssets(prev => {
+              const exists = prev.find(a => a.id === mapped.id);
+              if (payload.eventType === 'UPDATE' && exists) {
+                return prev.map(a => a.id === mapped.id ? mapped : a);
+              }
+              return [mapped, ...prev.filter(a => a.id !== mapped.id)];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setAssets(prev => prev.filter(a => a.id !== payload.old.id));
+          }
+        }
+      )
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'audits', filter: `empresa_id=eq.${empresaId}` }, 
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const audit = payload.new as any;
+            const filialObj = audit.filial_id ? filiaisRef.current.find(f => f.id === audit.filial_id) : null;
+            const mapped = {
+              ...audit,
+              auditorName: audit.auditor_name,
+              verifiedIds: audit.verified_ids || [],
+              allAssetsSnapshot: audit.all_assets_snapshot,
+              isFinalized: audit.is_finalized,
+              filial_id: audit.filial_id,
+              filial_nome: audit.filial_id ? (filialObj?.nome || 'Filial') : 'Sede / Matriz',
+              departamento: audit.departamento
+            } as any;
+            
+            setAudits(prev => {
+              const exists = prev.find(a => a.id === mapped.id);
+              if (payload.eventType === 'UPDATE' && exists) {
+                return prev.map(a => a.id === mapped.id ? mapped : a);
+              }
+              return [mapped, ...prev.filter(a => a.id !== mapped.id)];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setAudits(prev => prev.filter(a => a.id !== payload.old.id));
+          }
+        }
+      )
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'categorias', filter: `empresa_id=eq.${empresaId}` }, 
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const data = payload.new as any;
+            const mapped = { ...data, usefulLifeYears: data.useful_life_years };
+            setCategorias(prev => {
+              const exists = prev.find(c => c.id === mapped.id);
+              if (exists) return prev.map(c => c.id === mapped.id ? mapped : c);
+              return [...prev, mapped].sort((a, b) => a.name.localeCompare(b.name));
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setCategorias(prev => prev.filter(c => c.id !== payload.old.id));
+          }
+        }
+      )
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'filiais', filter: `empresa_id=eq.${empresaId}` }, 
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const data = payload.new as any;
+            const mapped = { ...data, createdAt: data.created_at };
+            setFiliais(prev => {
+              const exists = prev.find(f => f.id === mapped.id);
+              if (exists) return prev.map(f => f.id === mapped.id ? mapped : f);
+              return [...prev, mapped].sort((a, b) => a.nome.localeCompare(b.nome));
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setFiliais(prev => prev.filter(f => f.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(syncChannel);
+    };
+  }, [empresaId]); 
+ // Dependency array helps avoid stale mapping logic if categories/filials aren't loaded yet
 
   const addCategoria = async (name: string, usefulLifeYears: number = 10) => {
     if (!name.trim()) return;
