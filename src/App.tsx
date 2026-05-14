@@ -1597,12 +1597,15 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
           }
 
           if (status === 'ENCONTRADO' && locActual !== locExp) {
-            row.getCell(5).fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFFFEB9C' } // Yellow
-            };
-            row.getCell(5).font = { color: { argb: 'FF9C6500' }, bold: true };
+            // Highlight Expected Dept, Actual Dept and Status in Orange as per image
+            [4, 5, 6].forEach(colIndex => {
+              row.getCell(colIndex).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFA500' } // Orange
+              };
+              row.getCell(colIndex).font = { bold: true };
+            });
           }
         }
       });
