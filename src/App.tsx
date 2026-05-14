@@ -13,7 +13,7 @@ import { cn, formatCurrency, formatDate, normalizeString } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 // Utilitários de Áudio para o Scanner
-const playBeep = (type: 'success' | 'error' | 'neutral' = 'success') => {
+const playBeep = (type: 'success' | 'error' | 'neutral' | 'alert' = 'success') => {
   try {
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioCtx.createOscillator();
@@ -36,6 +36,17 @@ const playBeep = (type: 'success' | 'error' | 'neutral' = 'success') => {
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.2);
+    } else if (type === 'alert') {
+      // Duplo beep para alerta de setor errado
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(300, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0, audioCtx.currentTime + 0.15);
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime + 0.2);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.4);
     } else {
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // Lá (A4)
@@ -2326,7 +2337,7 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
         const isDeptoMismatch = auditDepto && assetDepto !== auditDepto;
 
         if (isFilialMismatch || isDeptoMismatch || fromExternalLocation) {
-          playBeep('neutral');
+          playBeep('alert');
           const assetFilialName = assetFilialId ? (filiais.find(f => f.id === assetFilialId)?.nome || 'Filial Desconhecida') : 'Sede / Matriz';
           const assetDeptoName = assetDepto || 'Não informado';
           
