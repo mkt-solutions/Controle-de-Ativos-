@@ -1627,7 +1627,7 @@ const ReportsView = ({ assets: allAssets, categorias, audits, filiais }: { asset
         </div>
         <button
           onClick={exportAccountingReport}
-          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 uppercase tracking-wider"
+          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-800 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-200 transition-all shadow-lg shadow-indigo-100 uppercase tracking-wider active:scale-95"
         >
           <Download size={18} />
           Exportar Contabilidade
@@ -2609,7 +2609,11 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {audits.filter(a => a.isFinalized).map((audit) => {
-              const pendingCount = audit.allAssetsSnapshot.length - audit.verifiedIds.length;
+              const totalExpected = audit.allAssetsSnapshot.length;
+              const outOfSectorCount = audit.verifiedIds.filter(vid => !audit.allAssetsSnapshot.some(item => item.id === vid)).length;
+              const verifiedInSectorCount = audit.verifiedIds.length - outOfSectorCount;
+              const pendingCount = Math.max(0, totalExpected - verifiedInSectorCount);
+
               return (
                 <div key={audit.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm transition-all hover:shadow-md relative group flex flex-col">
                   <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2649,14 +2653,22 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 pt-4 border-t border-slate-50 mt-auto">
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Esperados</p>
+                      <p className="text-sm font-bold text-slate-600">{totalExpected}</p>
+                    </div>
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Localizados</p>
-                      <p className="text-sm font-bold text-emerald-600">{audit.verifiedIds.length}</p>
+                      <p className="text-sm font-bold text-emerald-600">{verifiedInSectorCount}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Pendentes</p>
                       <p className={cn("text-sm font-bold", pendingCount > 0 ? "text-red-600" : "text-emerald-600")}>{pendingCount}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Fora de Setor</p>
+                      <p className="text-sm font-bold text-amber-600">{outOfSectorCount}</p>
                     </div>
                   </div>
                   {pendingCount > 0 && (
