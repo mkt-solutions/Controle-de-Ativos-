@@ -246,6 +246,16 @@ async function startServer() {
     }
   });
 
+  // Garantir que chamadas de API não encontradas retornem JSON e não a página HTML (SPA fallback)
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ 
+      error: "Rota de API não encontrada", 
+      path: req.url,
+      method: req.method,
+      tip: "Verifique se o backend está rodando corretamente (npm run start)."
+    });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

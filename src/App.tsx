@@ -3349,7 +3349,16 @@ export default function App() {
       const verifySession = async () => {
         try {
           const response = await fetch(`/api/verify-session?session_id=${sessionId}`);
-          const data = await response.json();
+          const contentType = response.headers.get('content-type');
+          let data;
+          
+          if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+          } else {
+            const text = await response.text();
+            console.error('Erro na verificação (não-JSON):', text.substring(0, 100));
+            return;
+          }
           
           if (data.success && data.companyId) {
             // Plano atualizado com sucesso no servidor

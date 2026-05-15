@@ -9,7 +9,16 @@ export const useStripeCheckout = () => {
         body: JSON.stringify({ planId, email, companyId, interval }),
       });
 
-      const session = await response.json();
+      const contentType = response.headers.get('content-type');
+      let session;
+      
+      if (contentType && contentType.includes('application/json')) {
+        session = await response.json();
+      } else {
+        const text = await response.text();
+        console.error('Resposta não-JSON recebida:', text.substring(0, 100));
+        throw new Error('O servidor retornou um erro inesperado (não-JSON). Verifique se as rotas de API estão configuradas corretamente.');
+      }
 
       if (session.error) {
         throw new Error(session.error);
