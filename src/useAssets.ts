@@ -11,6 +11,7 @@ export function useAssets() {
   const [loading, setLoading] = useState(true);
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
+  const [plano, setPlano] = useState<string>('free');
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = async (retries = 5, isRetry = false) => {
@@ -42,15 +43,16 @@ export function useAssets() {
 
       setEmpresaId(userEmpresa.empresa_id);
       
-      // 1.1 Fetch Empresa Name
+      // 1.1 Fetch Empresa Name and Plan
       const { data: empresaData } = await supabase
         .from('empresas')
-        .select('nome')
+        .select('nome, plano')
         .eq('id', userEmpresa.empresa_id)
         .maybeSingle();
       
       if (empresaData) {
         setEmpresaNome(empresaData.nome);
+        setPlano(empresaData.plano || 'free');
       }
       
       console.log('✅ Empresa identificada:', userEmpresa.empresa_id);
@@ -515,6 +517,22 @@ NOTIFY pgrst, 'reload schema';`);
       return false;
     }
 
+    // Limites de Plano
+    if (plano === 'free' && assets.length >= 20) {
+      setError('Limite atingido: O plano Free permite apenas 20 ativos. Faça upgrade para o plano Básico para cadastrar até 500 ativos.');
+      return 'limit_reached';
+    }
+
+    if (plano === 'basico' && assets.length >= 500) {
+      setError('Limite atingido: O plano Básico permite até 500 ativos. Faça upgrade para o plano Profissional.');
+      return 'limit_reached';
+    }
+
+    if (plano === 'profissional' && assets.length >= 3000) {
+      setError('Limite atingido: O plano Profissional permite até 3.000 ativos. Faça upgrade para o plano Enterprise.');
+      return 'limit_reached';
+    }
+
     // Validação de Unique Tag
     const tagExists = assets.some(a => a.tag.trim().toLowerCase() === asset.tag.trim().toLowerCase());
     if (tagExists) {
@@ -762,6 +780,15 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     }
 
     if (!currentEmpresaId) return;
+
+    // Limites de Plano para Bulk Insert
+    const currentCount = assets.length;
+    const limit = plano === 'free' ? 20 : plano === 'basico' ? 500 : plano === 'profissional' ? 3000 : 10000;
+    
+    if (currentCount + newAssets.length > limit) {
+      setError(`Limite atingido: Seu plano ${plano.toUpperCase()} permite até ${limit} ativos. Esta importação (${newAssets.length} novos) excederia o limite (atual: ${currentCount}).`);
+      return 0;
+    }
 
     // Filtrar duplicados no próprio lote e contra os já existentes
     const existingTags = new Set(assets.map(a => a.tag.trim().toLowerCase()));
@@ -1090,6 +1117,7 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     setError,
     empresaId,
     empresaNome,
+    plano,
     updateEmpresaNome,
     refresh: () => fetchAll(3, true)
   };

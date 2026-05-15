@@ -2951,8 +2951,8 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
     },
     {
       name: 'Enterprise',
-      price: 'R$ 107,90',
-      period: '/mês',
+      price: billingInterval === 'monthly' ? 'R$ 107,90' : 'R$ 1.079,00',
+      period: billingInterval === 'monthly' ? '/mês' : '/ano',
       description: 'Customização total e segurança máxima para grandes corporações.',
       features: [
         'Até 10.000 ativos',
@@ -2986,21 +2986,40 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
           Gerencie seu patrimônio com eficiência, transparência e controle total. Sem taxas escondidas.
         </p>
 
-        {/* Toggle Faturamento */}
-        <div className="flex items-center justify-center gap-4 mb-12">
-          <span className={cn("text-sm font-medium", billingInterval === 'monthly' ? "text-slate-900" : "text-slate-400")}>Mensal</span>
-          <button 
-            onClick={() => setBillingInterval(prev => prev === 'monthly' ? 'annual' : 'monthly')}
-            className="w-14 h-7 bg-slate-200 rounded-full p-1 transition-colors hover:bg-slate-300 relative"
-          >
-            <div className={cn(
-              "w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-300 transform",
-              billingInterval === 'annual' ? "translate-x-7" : "translate-x-0"
-            )} />
-          </button>
-          <span className={cn("text-sm font-medium", billingInterval === 'annual' ? "text-slate-900" : "text-slate-400")}>
-            Anual <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded-full text-xs ml-1 font-bold">Economize 20%</span>
-          </span>
+        {/* Toggle Faturamento Redesenhado */}
+        <div className="flex flex-col items-center mb-12">
+          <div className="bg-slate-100/80 p-1.5 rounded-2xl inline-flex items-center gap-1 border border-slate-200">
+            <button
+              onClick={() => setBillingInterval('monthly')}
+              className={cn(
+                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300",
+                billingInterval === 'monthly'
+                  ? "bg-white text-blue-600 shadow-md shadow-slate-200"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+              )}
+            >
+              Faturamento Mensal
+            </button>
+            <button
+              onClick={() => setBillingInterval('annual')}
+              className={cn(
+                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center gap-2",
+                billingInterval === 'annual'
+                  ? "bg-white text-blue-600 shadow-md shadow-slate-200"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+              )}
+            >
+              Faturamento Anual
+              <span className="bg-green-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">
+                -20%
+              </span>
+            </button>
+          </div>
+          <p className="mt-3 text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+            <span className="w-8 h-px bg-slate-200" />
+            Escolha como prefere pagar
+            <span className="w-8 h-px bg-slate-200" />
+          </p>
         </div>
       </div>
 
@@ -3093,7 +3112,7 @@ export default function App() {
   const { 
     assets, categorias, filiais, audits, loading, addCategoria, updateCategoria, removeCategoria, addFilial, removeFilial, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, updateEmpresaNome, refresh
+    error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, plano, updateEmpresaNome, refresh
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
@@ -3171,12 +3190,44 @@ export default function App() {
     const query = new URLSearchParams(window.location.search);
     if (query.get('success') === 'true') {
       const sessionId = query.get('session_id');
-      // Here you would typically verify the session on the server or just show a message
-      alert('Pagamento processado com sucesso! Bem-vindo ao Plano Básico.');
-      // Clear URL params
+      
+      const verifySession = async () => {
+        try {
+          const response = await fetch(`/api/verify-session?session_id=${sessionId}`);
+          const data = await response.json();
+          
+          if (data.success && data.companyId) {
+            // Atualizar o plano na tabela empresas
+            const { error: updateError } = await supabase
+              .from('empresas')
+              .update({ 
+                plano: data.planId,
+                stripe_customer_id: data.customerId
+              })
+              .eq('id', data.companyId);
+            
+            if (updateError) throw updateError;
+            
+            // Forçar atualização do estado local
+            alert(`Pagamento processado com sucesso! Sua empresa agora está no plano ${data.planId === 'basico' ? 'Básico' : data.planId}.`);
+            // Recarregar para garantir que todos os limites sejam atualizados
+            window.location.href = '/';
+          } else {
+            console.warn("Sessão não paga ou inválida:", data);
+          }
+        } catch (err) {
+          console.error("Erro ao verificar sessão:", err);
+          alert('O pagamento foi processado pela Stripe, mas houve um erro ao atualizar seu plano no nosso sistema. Por favor, entre em contato com o suporte com o ID: ' + sessionId);
+        }
+      };
+
+      if (sessionId) {
+        verifySession();
+      }
+      
       window.history.replaceState({}, '', window.location.pathname);
     } else if (query.get('success') === 'false') {
-      alert('O pagamento foi cancelado.');
+      alert('O pagamento foi cancelado ou não pôde ser processado.');
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -3457,7 +3508,14 @@ export default function App() {
                 {currentUser?.companyName?.charAt(0) || 'U'}
               </div>
               <div className="text-xs text-slate-400 min-w-0">
-                <p className="text-white font-medium truncate">{currentUser?.companyName || 'Empresa'}</p>
+                <p className="text-white font-medium truncate flex items-center gap-2">
+                  {currentUser?.companyName || 'Empresa'}
+                  {plano && plano !== 'free' && (
+                    <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-black shrink-0">
+                      {plano}
+                    </span>
+                  )}
+                </p>
                 <p className="truncate">{currentUser?.email}</p>
               </div>
             </div>
