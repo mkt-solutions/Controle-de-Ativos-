@@ -20,45 +20,64 @@ async function startServer() {
   // Stripe Checkout Endpoint
   app.post("/api/create-checkout-session", async (req, res) => {
     try {
-      const { planId, email, companyId } = req.body;
+      const { planId, email, companyId, interval } = req.body;
 
       if (planId !== "basico") {
         return res.status(400).json({ error: "No momento, apenas o plano Básico está disponível para checkout em teste." });
       }
 
+      const priceId = interval === 'annual' 
+        ? process.env.STRIPE_BASIC_ANNUAL_PRICE_ID 
+        : process.env.STRIPE_BASIC_MONTHLY_PRICE_ID;
+
       if (!process.env.STRIPE_SECRET_KEY) {
-        throw new Error("STRIPE_SECRET_KEY environment variable is required");
+        throw new Error("A variável STRIPE_SECRET_KEY não foi configurada no painel de Settings.");
       }
 
-      if (!process.env.STRIPE_BASIC_PLAN_PRICE_ID) {
-        throw new Error("STRIPE_BASIC_PLAN_PRICE_ID environment variable is required");
+      if (!priceId) {
+        const varName = interval === 'annual' ? 'STRIPE_BASIC_ANNUAL_PRICE_ID' : 'STRIPE_BASIC_MONTHLY_PRICE_ID';
+        throw new Error(`A variável ${varName} é obrigatória. Certifique-se de usar o ID de PREÇO (price_...) e não do produto.`);
+      }
+
+      if (priceId.startsWith('prod_')) {
+        throw new Error("Você forneceu um ID de Produto (prod_...). A Stripe exige um ID de PREÇO (price_...). Procure no painel da Stripe em 'Preços' dentro do produto.");
       }
 
       const Stripe = (await import("stripe")).default;
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+        apiVersion: '2024-04-10' as any,
+      });
+
+      // Detect base URL from headers
+      const protocol = req.headers['x-forwarded-proto'] || 'http';
+      const host = req.headers['host'];
+      const baseUrl = `${protocol}://${host}`;
+
+      console.log(`[Stripe] Criando sessão: ${email}, ${planId}, ${interval} em ${baseUrl}`);
 
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
           {
-            price: process.env.STRIPE_BASIC_PLAN_PRICE_ID,
+            price: priceId,
             quantity: 1,
           },
         ],
         mode: "subscription",
-        customer_email: email,
+        customer_email: email || undefined,
         metadata: {
-          companyId,
+          companyId: companyId || "unknown",
           planId,
+          interval: interval || 'monthly',
         },
-        success_url: `${req.headers.origin || 'http://localhost:3000'}/?session_id={CHECKOUT_SESSION_ID}&success=true`,
-        cancel_url: `${req.headers.origin || 'http://localhost:3000'}/?success=false`,
+        success_url: `${baseUrl}/?session_id={CHECKOUT_SESSION_ID}&success=true`,
+        cancel_url: `${baseUrl}/?success=false`,
       });
 
       res.json({ sessionId: session.id, url: session.url });
     } catch (error: any) {
       console.error("Stripe Error:", error);
-      res.status(500).json({ error: error.message || "Internal Server Error" });
+      res.status(500).json({ error: error.message || "Erro interno no servidor Stripe." });
     }
   });
 

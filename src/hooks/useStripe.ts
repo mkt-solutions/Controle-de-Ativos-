@@ -1,14 +1,12 @@
-const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-
 export const useStripeCheckout = () => {
-  const handleCheckout = async (planId: string, email: string, companyId: string) => {
+  const handleCheckout = async (planId: string, email: string, companyId: string, interval: 'monthly' | 'annual') => {
     try {
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ planId, email, companyId }),
+        body: JSON.stringify({ planId, email, companyId, interval }),
       });
 
       const session = await response.json();
@@ -22,9 +20,9 @@ export const useStripeCheckout = () => {
       } else {
         throw new Error('Sessão de checkout não retornou URL.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Checkout error:', error);
-      alert('Erro ao iniciar o pagamento. Por favor, tente novamente.');
+      alert(error.message || 'Erro ao iniciar o pagamento. Por favor, tente novamente.');
     }
   };
 

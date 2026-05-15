@@ -2881,12 +2881,29 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
 
 const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null }) => {
   const { handleCheckout } = useStripeCheckout();
+  const [loadingPlan, setLoadingPlan] = React.useState<string | null>(null);
+  const [billingInterval, setBillingInterval] = React.useState<'monthly' | 'annual'>('monthly');
+
+  const onCheckout = async (planId: string) => {
+    if (planId !== 'basico') {
+      alert('Este plano estará disponível em breve.');
+      return;
+    }
+
+    setLoadingPlan(planId);
+    try {
+      await handleCheckout(planId, user?.email, empresaId || '', billingInterval);
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
+
   const plans = [
     {
       id: 'basico',
       name: 'Básico',
-      price: 'R$ 37,50',
-      period: '/mês',
+      price: billingInterval === 'monthly' ? 'R$ 37,50' : 'R$ 375,00',
+      period: billingInterval === 'monthly' ? '/mês' : '/ano',
       description: 'Ideal para pequenas empresas que estão começando o controle patrimonial.',
       features: [
         'Até 500 ativos',
@@ -2909,8 +2926,8 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
     },
     {
       name: 'Profissional',
-      price: 'R$ 59,90',
-      period: '/mês',
+      price: billingInterval === 'monthly' ? 'R$ 59,90' : 'R$ 599,00',
+      period: billingInterval === 'monthly' ? '/mês' : '/ano',
       description: 'A solução completa para empresas em crescimento com múltiplas unidades.',
       features: [
         'Até 3.000 ativos',
@@ -2965,9 +2982,26 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
         <p className="text-blue-600 font-bold mb-4 tracking-wide uppercase text-xs">
           plano free para testar: cadastre até 20 ativos para testar o sistema
         </p>
-        <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+        <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-10">
           Gerencie seu patrimônio com eficiência, transparência e controle total. Sem taxas escondidas.
         </p>
+
+        {/* Toggle Faturamento */}
+        <div className="flex items-center justify-center gap-4 mb-12">
+          <span className={cn("text-sm font-medium", billingInterval === 'monthly' ? "text-slate-900" : "text-slate-400")}>Mensal</span>
+          <button 
+            onClick={() => setBillingInterval(prev => prev === 'monthly' ? 'annual' : 'monthly')}
+            className="w-14 h-7 bg-slate-200 rounded-full p-1 transition-colors hover:bg-slate-300 relative"
+          >
+            <div className={cn(
+              "w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-300 transform",
+              billingInterval === 'annual' ? "translate-x-7" : "translate-x-0"
+            )} />
+          </button>
+          <span className={cn("text-sm font-medium", billingInterval === 'annual' ? "text-slate-900" : "text-slate-400")}>
+            Anual <span className="bg-green-100 text-green-600 px-2 py-0.5 rounded-full text-xs ml-1 font-bold">Economize 20%</span>
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -3016,15 +3050,24 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
             </ul>
 
             <button 
-              onClick={() => plan.id === 'basico' ? handleCheckout(plan.id, user?.email, empresaId || '') : alert('Este plano estará disponível em breve.')}
+              onClick={() => onCheckout(plan.id || '')}
+              disabled={loadingPlan !== null}
               className={cn(
-                "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98]",
+                "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2",
+                loadingPlan === plan.id ? "opacity-70 cursor-not-allowed" : "",
                 plan.buttonVariant === 'primary' 
                   ? "bg-blue-600 text-white shadow-xl shadow-blue-200 hover:bg-blue-700 hover:shadow-blue-300"
                   : "bg-slate-50 text-slate-600 hover:bg-slate-100"
               )}
             >
-              Começar {plan.name}
+              {loadingPlan === plan.id ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                `Começar ${plan.name}`
+              )}
             </button>
           </div>
         ))}
