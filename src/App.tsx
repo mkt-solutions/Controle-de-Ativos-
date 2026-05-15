@@ -3179,19 +3179,19 @@ const PlansView = ({ user, empresaId, stripeCustomerId, currentPlan }: { user: a
                 <button 
                   onClick={onOpenPortal}
                   disabled={loadingPortal}
-                  className="w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                  className="w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 cursor-pointer"
                 >
                   {loadingPortal ? (
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
-                      <Check size={18} />
-                      Plano Ativo
+                      <Zap size={18} />
+                      Gerenciar Assinatura
                     </>
                   )}
                 </button>
               ) : (
-                <div className="w-full py-4 rounded-2xl font-bold text-sm bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center gap-2 cursor-not-allowed">
+                <div className="w-full py-4 rounded-2xl font-bold text-sm bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center gap-2 cursor-default">
                   <Check size={18} />
                   Plano Ativo
                 </div>
