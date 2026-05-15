@@ -3365,10 +3365,15 @@ export default function App() {
           }
           
           if (data.success && data.companyId) {
-            // Plano atualizado com sucesso no servidor
-            alert(`Pagamento processado com sucesso! Sua empresa agora está no plano ${data.planId === 'basico' ? 'Básico' : data.planId === 'profissional' ? 'Profissional' : 'Enterprise'}.`);
-            // Recarregar para garantir que todos os limites sejam atualizados
-            window.location.href = '/';
+            if (data.dbUpdateSuccess) {
+              // Plano atualizado com sucesso no servidor e no banco
+              alert(`Pagamento processado com sucesso! Sua empresa agora está no plano ${data.planId === 'basico' ? 'Básico' : data.planId === 'profissional' ? 'Profissional' : 'Enterprise'}.`);
+              window.location.href = '/';
+            } else {
+              // Pagamento ok no Stripe, mas erro no banco (Supabase)
+              console.error("Erro ao atualizar banco (Supabase):", data.dbError);
+              alert(`O pagamento foi confirmado pelo Stripe, mas encontramos um problema ao atualizar seu plano no nosso banco de dados.\n\nErro: ${data.dbError || 'Desconhecido'}\n\nPor favor, entre em contato com o suporte.`);
+            }
           } else {
             console.warn("Sessão não paga ou inválida:", data);
           }

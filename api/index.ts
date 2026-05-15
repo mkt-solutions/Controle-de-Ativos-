@@ -165,35 +165,59 @@ app.get("/api/verify-session", async (req, res) => {
 
       console.log(`[Stripe Verify] Iniciando atualização: Empresa=${companyId}, Plano=${planId}, Session=${sessionId}`);
 
+      let dbUpdateSuccess = false;
+      let dbError = null;
+
       if (companyId && companyId !== "unknown" && planId) {
         try {
           const { createClient } = await import('@supabase/supabase-js');
-          const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
           
-          const { data, error } = await supabase
-            .from('empresas')
-            .update({ 
-              plano: planId, 
-              stripe_customer_id: customerId 
-            })
-            .eq('id', companyId)
-            .select();
+          const supabaseUrl = process.env.VITE_SUPABASE_URL;
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-          if (error) {
-            console.error(`[Stripe Verify] Erro Supabase:`, error);
-            throw error;
+          if (!supabaseUrl || !supabaseKey) {
+            console.error("[Stripe Verify] Erro: VITE_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurados no servidor.");
+            dbError = "Variáveis de ambiente do Supabase ausentes no servidor.";
+          } else {
+            const supabase = createClient(supabaseUrl, supabaseKey);
+            
+            const { data, error } = await supabase
+              .from('empresas')
+              .update({ 
+                plano: planId, 
+                stripe_customer_id: customerId 
+              })
+              .eq('id', companyId)
+              .select();
+
+            if (error) {
+              console.error(`[Stripe Verify] Erro Supabase:`, error);
+              dbError = error.message;
+            } else if (data && data.length > 0) {
+              console.log(`[Stripe Verify] Sucesso! Empresa ${companyId} atualizada para ${planId}.`);
+              dbUpdateSuccess = true;
+            } else {
+              console.warn(`[Stripe Verify] Aviso: Nenhuma linha foi atualizada. Verifique se o ID ${companyId} existe na tabela 'empresas'.`);
+              dbError = "Nenhuma empresa encontrada com este ID.";
+            }
           }
-          
-          console.log(`[Stripe Verify] Sucesso! Linhas afetadas:`, data?.length);
-        } catch (dbErr: any) {
-          console.error(`[Stripe Verify] Erro ao salvar no banco:`, dbErr.message);
-          // Retornamos sucesso do mesmo jeito para o usuário não travar, mas o log nos dirá o erro
+        } catch (err: any) {
+          console.error(`[Stripe Verify] Exceção ao acessar banco:`, err.message);
+          dbError = err.message;
         }
       } else {
         console.warn(`[Stripe Verify] Dados incompletos nos metadados:`, { companyId, planId });
+        dbError = "Metadados incompletos na sessão do Stripe.";
       }
 
-      res.json({ success: true, planId, companyId, customerId });
+      res.json({ 
+        success: true, 
+        planId, 
+        companyId, 
+        customerId,
+        dbUpdateSuccess,
+        dbError 
+      });
     } else {
       console.log(`[Stripe Verify] Pagamento não concluído: ${session.payment_status}`);
       res.json({ success: false, status: session.payment_status });
