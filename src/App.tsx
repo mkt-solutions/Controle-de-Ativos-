@@ -2935,9 +2935,13 @@ const PlansView = ({ user, empresaId, stripeCustomerId, currentPlan }: { user: a
   const [billingInterval, setBillingInterval] = React.useState<'monthly' | 'annual'>('monthly');
 
   const onCheckout = async (planId: string) => {
+    if (!empresaId) {
+      alert("Identificador da empresa ainda carregando. Por favor, aguarde alguns segundos ou recarregue a página.");
+      return;
+    }
     setLoadingPlan(planId);
     try {
-      await handleCheckout(planId, user?.email, empresaId || '', billingInterval);
+      await handleCheckout(planId, user?.email, empresaId, billingInterval);
     } finally {
       setLoadingPlan(null);
     }

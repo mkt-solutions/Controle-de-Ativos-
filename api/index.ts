@@ -98,12 +98,23 @@ app.post("/api/create-checkout-session", async (req, res) => {
     const host = req.headers['host'];
     const baseUrl = `${protocol}://${host}`;
 
+    if (!companyId || companyId === "unknown") {
+      console.error("[Stripe Checkout] Erro: Tentativa de checkout sem ID de empresa válido.");
+      return res.status(400).json({ error: "Erro de identificação: ID da empresa não encontrado. Recarregue a página e tente novamente." });
+    }
+
+    console.log(`[Stripe Checkout] Criando sessão: Email=${email}, Plano=${planId}, Empresa=${companyId}`);
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       customer_email: email || undefined,
-      metadata: { companyId: companyId || "unknown", planId, interval: interval || 'monthly' },
+      metadata: { 
+        companyId, 
+        planId, 
+        interval: interval || 'monthly' 
+      },
       success_url: `${baseUrl}/?session_id={CHECKOUT_SESSION_ID}&success=true`,
       cancel_url: `${baseUrl}/?success=false`,
     });
@@ -152,14 +163,39 @@ app.get("/api/verify-session", async (req, res) => {
       const companyId = session.metadata?.companyId;
       const customerId = session.customer;
 
-      if (companyId && planId) {
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-        await supabase.from('empresas').update({ plano: planId, stripe_customer_id: customerId }).eq('id', companyId);
+      console.log(`[Stripe Verify] Iniciando atualização: Empresa=${companyId}, Plano=${planId}, Session=${sessionId}`);
+
+      if (companyId && companyId !== "unknown" && planId) {
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+          
+          const { data, error } = await supabase
+            .from('empresas')
+            .update({ 
+              plano: planId, 
+              stripe_customer_id: customerId 
+            })
+            .eq('id', companyId)
+            .select();
+
+          if (error) {
+            console.error(`[Stripe Verify] Erro Supabase:`, error);
+            throw error;
+          }
+          
+          console.log(`[Stripe Verify] Sucesso! Linhas afetadas:`, data?.length);
+        } catch (dbErr: any) {
+          console.error(`[Stripe Verify] Erro ao salvar no banco:`, dbErr.message);
+          // Retornamos sucesso do mesmo jeito para o usuário não travar, mas o log nos dirá o erro
+        }
+      } else {
+        console.warn(`[Stripe Verify] Dados incompletos nos metadados:`, { companyId, planId });
       }
 
       res.json({ success: true, planId, companyId, customerId });
     } else {
+      console.log(`[Stripe Verify] Pagamento não concluído: ${session.payment_status}`);
       res.json({ success: false, status: session.payment_status });
     }
   } catch (error: any) {
