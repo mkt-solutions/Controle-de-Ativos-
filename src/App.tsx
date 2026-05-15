@@ -8,6 +8,7 @@ import { saveAs } from 'file-saver';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAssets } from './useAssets';
 import { Asset, AssetStatus, CategoriaAtivo, Categoria, AuditRecord, Filial } from './types';
+import { useStripeCheckout } from './hooks/useStripe';
 import { supabase } from './lib/supabase';
 import { cn, formatCurrency, formatDate, normalizeString } from './lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RePieChart, Pie, Cell, LineChart, Line } from 'recharts';
@@ -2878,9 +2879,11 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
   );
 };
 
-const PlansView = () => {
+const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null }) => {
+  const { handleCheckout } = useStripeCheckout();
   const plans = [
     {
+      id: 'basico',
       name: 'Básico',
       price: 'R$ 37,50',
       period: '/mês',
@@ -3013,6 +3016,7 @@ const PlansView = () => {
             </ul>
 
             <button 
+              onClick={() => plan.id === 'basico' ? handleCheckout(plan.id, user?.email, empresaId || '') : alert('Este plano estará disponível em breve.')}
               className={cn(
                 "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98]",
                 plan.buttonVariant === 'primary' 
@@ -3119,6 +3123,21 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Effect to check for Stripe session result
+  React.useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('success') === 'true') {
+      const sessionId = query.get('session_id');
+      // Here you would typically verify the session on the server or just show a message
+      alert('Pagamento processado com sucesso! Bem-vindo ao Plano Básico.');
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (query.get('success') === 'false') {
+      alert('O pagamento foi cancelado.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+  
   // Redirecionar para configurações se a empresa ou o nome não existir
   React.useEffect(() => {
     if (isAuthenticated && !loading) {
@@ -3577,7 +3596,7 @@ export default function App() {
               clearError={() => setCategoriaErro(null)}
             />
           )}
-          {view === 'plans' && <PlansView />}
+          {view === 'plans' && <PlansView user={currentUser} empresaId={empresaId} />}
           {view === 'configuracoes' && (
             <div className="max-w-2xl mx-auto py-8">
               <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-xl shadow-slate-200/50">
