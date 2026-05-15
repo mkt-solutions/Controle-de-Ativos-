@@ -12,11 +12,12 @@ export function useAssets() {
   const [empresaId, setEmpresaId] = useState<string | null>(null);
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
   const [plano, setPlano] = useState<string>('free');
+  const [stripeCustomerId, setStripeCustomerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = async (retries = 5, isRetry = false) => {
-    // Só ativa o loading global na primeira tentativa para evitar "piscar"
-    if (!isRetry) setLoading(true);
+    // Só ativa o loading global se ainda não temos o ID para sair do setup
+    if (!isRetry || !empresaId) setLoading(true);
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -25,44 +26,77 @@ export function useAssets() {
         return;
       }
 
+      console.log('🔍 Buscando empresa para usuário:', user.id);
+
+      // Usar metadados como hint inicial para evitar "pulo" de UI se já tivermos as info
+      if (user.user_metadata?.company_id && !empresaId) {
+        setEmpresaId(user.user_metadata.company_id);
+        if (user.user_metadata.company_name) setEmpresaNome(user.user_metadata.company_name);
+      }
+
       // 1. Get Empresa ID for the current user
-      const { data: userEmpresa, error: empresaError } = await supabase
-        .from('usuarios_empresa')
-        .select('empresa_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (empresaError) {
-        console.error('Erro ao buscar empresa:', empresaError);
+      let userEmpresaData: any = null;
+      let attempts = 0;
+      
+      // Tentativa de busca com retry interno para lidar com latência de escrita
+      while (attempts < 3 && !userEmpresaData) {
+        const { data } = await supabase
+          .from('usuarios_empresa')
+          .select('empresa_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        userEmpresaData = data;
+        if (!userEmpresaData) {
+          attempts++;
+          if (attempts < 3) await new Promise(r => setTimeout(r, 800));
+        }
       }
-      if (!userEmpresa) {
-        setEmpresaId(null);
-        setLoading(false);
-        return;
+
+      if (!userEmpresaData) {
+        // Fallback para metadados se o banco falhar mas temos no token
+        if (user.user_metadata?.company_id) {
+          userEmpresaData = { empresa_id: user.user_metadata.company_id };
+        } else {
+          console.warn('⚠️ Usuário não possui empresa vinculada.');
+          setEmpresaId(null);
+          setEmpresaNome(null);
+          setLoading(false);
+          return;
+        }
       }
 
-      setEmpresaId(userEmpresa.empresa_id);
+      setEmpresaId(userEmpresaData.empresa_id);
       
       // 1.1 Fetch Empresa Name and Plan
       const { data: empresaData } = await supabase
         .from('empresas')
-        .select('nome, plano')
-        .eq('id', userEmpresa.empresa_id)
+        .select('nome, plano, stripe_customer_id')
+        .eq('id', userEmpresaData.empresa_id)
         .maybeSingle();
       
       if (empresaData) {
         setEmpresaNome(empresaData.nome);
         setPlano(empresaData.plano || 'free');
+        setStripeCustomerId(empresaData.stripe_customer_id);
+      } else {
+        // Fallback para o nome no metadado se existir
+        if (user.user_metadata?.company_name) {
+          setEmpresaNome(user.user_metadata.company_name);
+        } else {
+          console.warn('⚠️ Empresa encontrada no vínculo mas não na tabela de empresas!');
+          setEmpresaNome(null);
+        }
       }
       
-      console.log('✅ Empresa identificada:', userEmpresa.empresa_id);
+      console.log('✅ Empresa identificada:', userEmpresaData.empresa_id, empresaData?.nome);
 
       // 2. Fetch using empresa_id
       const [catRes, assetRes, auditRes, filialRes] = await Promise.all([
-        supabase.from('categorias').select('*').eq('empresa_id', userEmpresa.empresa_id).order('name'),
-        supabase.from('assets').select('*').eq('empresa_id', userEmpresa.empresa_id).order('created_at', { ascending: false }),
-        supabase.from('audits').select('*').eq('empresa_id', userEmpresa.empresa_id).order('date', { ascending: false }),
-        supabase.from('filiais').select('*').eq('empresa_id', userEmpresa.empresa_id).order('nome')
+        supabase.from('categorias').select('*').eq('empresa_id', userEmpresaData.empresa_id).order('name'),
+        supabase.from('assets').select('*').eq('empresa_id', userEmpresaData.empresa_id).order('created_at', { ascending: false }),
+        supabase.from('audits').select('*').eq('empresa_id', userEmpresaData.empresa_id).order('date', { ascending: false }),
+        supabase.from('filiais').select('*').eq('empresa_id', userEmpresaData.empresa_id).order('nome')
       ]);
 
       if (catRes.error) {
@@ -653,6 +687,15 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
       if (error) throw error;
       
       setEmpresaNome(novoNome.trim());
+
+      // Também atualiza o metadado do usuário para manter o estado local do Supabase sincronizado
+      await supabase.auth.updateUser({
+        data: { 
+          company_name: novoNome.trim(),
+          display_name: novoNome.trim() 
+        }
+      });
+      
       return true;
     } catch (err: any) {
       console.error('Erro ao atualizar nome da empresa:', err);
@@ -1118,6 +1161,7 @@ Vá em Configurações e use o Script de Reparo ou execute o comando NOTIFY no S
     empresaId,
     empresaNome,
     plano,
+    stripeCustomerId,
     updateEmpresaNome,
     refresh: () => fetchAll(3, true)
   };

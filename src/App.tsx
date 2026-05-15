@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Package, PieChart, Plus, Search, Filter, MoreVertical, Edit2, Edit3, Trash2, MapPin, Map as MapIcon, GitBranch, User, Calendar, ExternalLink, ArrowUpRight, TrendingUp, DollarSign, Box, Settings, Check, X, ClipboardCheck, History, Download, UserCheck, Camera, QrCode, Scan, Menu, FileUp, Bell, Clock, AlertTriangle, Eye, Info, LogOut, Lock, Mail, Building2, Power, CreditCard, Zap, ShieldCheck, ChevronDown, FileText, ArrowLeft, ArrowUpCircle, ArrowRight } from 'lucide-react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -322,7 +322,7 @@ const AuthPage = ({ onAuthSuccess }: { onAuthSuccess: (user: any) => void }) => 
 };
 
 // --- SETUP INICIAL (Configuração Pós-Login) ---
-const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onComplete: () => void, embedded?: boolean }) => {
+const SetupCompany = ({ user, onComplete, embedded = false, existingEmpresaId = null }: { user: any, onComplete: () => void, embedded?: boolean, existingEmpresaId?: string | null }) => {
   const [companyName, setCompanyName] = React.useState('');
   const [hasFiliais, setHasFiliais] = React.useState(false);
   const [filialNames, setFilialNames] = React.useState<string[]>([]);
@@ -352,31 +352,73 @@ const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onCom
       const trimmedName = companyName.trim();
       if (!trimmedName) throw new Error('O nome da empresa é obrigatório.');
 
-      // 1. Criar empresa
-      const { data: company, error: errComp } = await supabase
+      let companyId = existingEmpresaId;
+
+      // 0. Se não temos existingEmpresaId, tentamos buscar no banco para evitar duplicatas frustrantes
+      if (!companyId) {
+        const { data: link } = await supabase
+          .from('usuarios_empresa')
+          .select('empresa_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (link) {
+          companyId = link.empresa_id;
+          console.log('📦 Link de empresa existente encontrado:', companyId);
+        }
+      }
+
+      if (!companyId) {
+        // 1. Criar nova empresa se realmente não houver nada vinculado
+        const { data: company, error: errComp } = await supabase
+          .from('empresas')
+          .insert({ nome: trimmedName })
+          .select()
+          .single();
+
+        if (errComp) throw errComp;
+        companyId = company.id;
+
+        // 2. Vincular usuário logado como dono/admin
+        const { error: errLink } = await supabase
+          .from('usuarios_empresa')
+          .insert({
+            user_id: user.id,
+            empresa_id: companyId,
+            role: 'admin'
+          });
+
+        if (errLink) {
+          // Se o erro for de chave duplicada, conseguimos o ID do vínculo existente e abandonamos a nova empresa criada
+          if (errLink.message.includes('unique constraint') || errLink.message.includes('duplicate key')) {
+             const { data: existingLink } = await supabase
+              .from('usuarios_empresa')
+              .select('empresa_id')
+              .eq('user_id', user.id)
+              .single();
+             if (existingLink) {
+               companyId = existingLink.empresa_id;
+               console.log('🔄 Recuperado ID de empresa via conflito de chave:', companyId);
+             }
+          } else {
+            throw errLink;
+          }
+        }
+      }
+
+      // 3. AGORA, com o ID correto (seja novo ou recuperado), garantimos que o nome esteja atualizado
+      const { error: errUpdateName } = await supabase
         .from('empresas')
-        .insert({ nome: trimmedName })
-        .select()
-        .single();
+        .update({ nome: trimmedName })
+        .eq('id', companyId);
+      
+      if (errUpdateName) throw errUpdateName;
 
-      if (errComp) throw errComp;
-
-      // 2. Vincular usuário logado como dono/admin
-      const { error: errLink } = await supabase
-        .from('usuarios_empresa')
-        .insert({
-          user_id: user.id,
-          empresa_id: company.id,
-          role: 'admin'
-        });
-
-      if (errLink) throw errLink;
-
-      // 3. Criar filiais se houver
-      if (hasFiliais && filialNames.length > 0) {
+      // 4. Criar filiais se houver
+      if (hasFiliais && filialNames.length > 0 && companyId) {
         const filiaisToInsert = filialNames.map(nome => ({
           nome,
-          empresa_id: company.id
+          empresa_id: companyId
         }));
         const { error: errFiliais } = await supabase.from('filiais').insert(filiaisToInsert);
         if (errFiliais) {
@@ -384,25 +426,32 @@ const SetupCompany = ({ user, onComplete, embedded = false }: { user: any, onCom
         }
       }
 
-      // 4. Criar categorias padrão
-      const defaultCategories = [
-        { name: 'Tecnologia / TI', useful_life_years: 5, empresa_id: company.id },
-        { name: 'Mobiliário', useful_life_years: 10, empresa_id: company.id },
-        { name: 'Máquinas e Equipamentos', useful_life_years: 10, empresa_id: company.id },
-        { name: 'Ferramentas Elétricas', useful_life_years: 5, empresa_id: company.id },
-        { name: 'Veículos', useful_life_years: 5, empresa_id: company.id },
-        { name: 'Infraestrutura', useful_life_years: 10, empresa_id: company.id },
-      ];
+      // 4. Criar categorias padrão (apenas se for nova empresa ou se não tiver categorias)
+      if (companyId) {
+        const { data: existingCats } = await supabase.from('categorias').select('id').eq('empresa_id', companyId).limit(1);
+        
+        if (!existingCats || existingCats.length === 0) {
+          const defaultCategories = [
+            { name: 'Tecnologia / TI', useful_life_years: 5, empresa_id: companyId },
+            { name: 'Mobiliário', useful_life_years: 10, empresa_id: companyId },
+            { name: 'Máquinas e Equipamentos', useful_life_years: 10, empresa_id: companyId },
+            { name: 'Ferramentas Elétricas', useful_life_years: 5, empresa_id: companyId },
+            { name: 'Veículos', useful_life_years: 5, empresa_id: companyId },
+            { name: 'Infraestrutura', useful_life_years: 10, empresa_id: companyId },
+          ];
 
-      const { error: errCats } = await supabase.from('categorias').insert(defaultCategories);
-      if (errCats) {
-        console.error('Erro ao inserir categorias padrão:', errCats);
+          const { error: errCats } = await supabase.from('categorias').insert(defaultCategories);
+          if (errCats) {
+            console.error('Erro ao inserir categorias padrão:', errCats);
+          }
+        }
       }
 
-      // 5. Opcionalmente atualizar metadados (para consistência)
+      // 5. Atualizar metadados do usuário
       await supabase.auth.updateUser({
         data: { 
           company_name: trimmedName,
+          company_id: companyId,
           display_name: trimmedName 
         }
       });
@@ -2879,17 +2928,13 @@ const AuditView = ({ assets, audits, filiais, startAudit, toggleAssetAudit, fina
   );
 };
 
-const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null }) => {
+const PlansView = ({ user, empresaId, stripeCustomerId, currentPlan }: { user: any, empresaId: string | null, stripeCustomerId: string | null, currentPlan: string }) => {
   const { handleCheckout } = useStripeCheckout();
   const [loadingPlan, setLoadingPlan] = React.useState<string | null>(null);
+  const [loadingPortal, setLoadingPortal] = React.useState(false);
   const [billingInterval, setBillingInterval] = React.useState<'monthly' | 'annual'>('monthly');
 
   const onCheckout = async (planId: string) => {
-    if (planId !== 'basico') {
-      alert('Este plano estará disponível em breve.');
-      return;
-    }
-
     setLoadingPlan(planId);
     try {
       await handleCheckout(planId, user?.email, empresaId || '', billingInterval);
@@ -2897,6 +2942,29 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
       setLoadingPlan(null);
     }
   };
+
+  const onOpenPortal = async () => {
+    if (!stripeCustomerId) return;
+    setLoadingPortal(true);
+    try {
+      const response = await fetch('/api/create-portal-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: stripeCustomerId }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error("Erro ao abrir portal:", err);
+      alert("Não foi possível carregar as informações da assinatura.");
+    } finally {
+      setLoadingPortal(false);
+    }
+  };
+
+  const plansGridRef = React.useRef<HTMLDivElement>(null);
 
   const plans = [
     {
@@ -2925,6 +2993,7 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
       buttonVariant: 'outline'
     },
     {
+      id: 'profissional',
       name: 'Profissional',
       price: billingInterval === 'monthly' ? 'R$ 59,90' : 'R$ 599,00',
       period: billingInterval === 'monthly' ? '/mês' : '/ano',
@@ -2950,6 +3019,7 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
       buttonVariant: 'primary'
     },
     {
+      id: 'enterprise',
       name: 'Enterprise',
       price: billingInterval === 'monthly' ? 'R$ 107,90' : 'R$ 1.079,00',
       period: billingInterval === 'monthly' ? '/mês' : '/ano',
@@ -2975,8 +3045,34 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
     }
   ];
 
+  const scrollToPlans = () => {
+    plansGridRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
     <div className="max-w-6xl mx-auto py-12 px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Box do Plano Atual */}
+      <div className="mb-12 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
+            <CreditCard size={24} />
+          </div>
+          <div>
+            <p className="text-slate-500 text-sm font-medium">Seu plano atual</p>
+            <h3 className="text-xl font-bold text-slate-900 uppercase tracking-tight">
+              {currentPlan || 'Nenhum'}
+            </h3>
+          </div>
+        </div>
+        <button 
+          onClick={scrollToPlans}
+          className="px-8 py-3 bg-blue-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all active:scale-[0.98] flex items-center gap-2"
+        >
+          <ArrowUpCircle size={18} />
+          Fazer Upgrade
+        </button>
+      </div>
+
       <div className="text-center mb-16">
         <h2 className="text-4xl font-black text-slate-900 tracking-tight mb-4">Escolha o plano ideal para seu negócio</h2>
         <p className="text-blue-600 font-bold mb-4 tracking-wide uppercase text-xs">
@@ -2988,6 +3084,11 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
 
         {/* Toggle Faturamento Redesenhado */}
         <div className="flex flex-col items-center mb-12">
+          <p className="mb-4 text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+            <span className="w-8 h-px bg-slate-200" />
+            Escolha como prefere pagar
+            <span className="w-8 h-px bg-slate-200" />
+          </p>
           <div className="bg-slate-100/80 p-1.5 rounded-2xl inline-flex items-center gap-1 border border-slate-200">
             <button
               onClick={() => setBillingInterval('monthly')}
@@ -3015,26 +3116,27 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
               </span>
             </button>
           </div>
-          <p className="mt-3 text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <span className="w-8 h-px bg-slate-200" />
-            Escolha como prefere pagar
-            <span className="w-8 h-px bg-slate-200" />
-          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div ref={plansGridRef} className="grid grid-cols-1 md:grid-cols-3 gap-8 scroll-mt-20">
         {plans.map((plan) => (
           <div 
             key={plan.name}
             className={cn(
               "relative bg-white rounded-3xl p-8 border transition-all duration-300 hover:shadow-2xl hover:-translate-y-1",
-              plan.featured ? "border-blue-200 shadow-xl shadow-blue-100/50 scale-105 z-10" : "border-slate-100 shadow-lg shadow-slate-200/50"
+              plan.featured ? "border-blue-200 shadow-xl shadow-blue-100/50 scale-105 z-10" : "border-slate-100 shadow-lg shadow-slate-200/50",
+              currentPlan === plan.id && "bg-slate-50/50 ring-2 ring-blue-600/10"
             )}
           >
             {plan.featured && (
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
                 MAIS POPULAR
+              </div>
+            )}
+            {currentPlan === plan.id && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
+                SEU PLANO ATUAL
               </div>
             )}
             
@@ -3068,42 +3170,95 @@ const PlansView = ({ user, empresaId }: { user: any, empresaId: string | null })
               ))}
             </ul>
 
-            <button 
-              onClick={() => onCheckout(plan.id || '')}
-              disabled={loadingPlan !== null}
-              className={cn(
-                "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2",
-                loadingPlan === plan.id ? "opacity-70 cursor-not-allowed" : "",
-                plan.buttonVariant === 'primary' 
-                  ? "bg-blue-600 text-white shadow-xl shadow-blue-200 hover:bg-blue-700 hover:shadow-blue-300"
-                  : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-              )}
-            >
-              {loadingPlan === plan.id ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Processando...
-                </>
+            {currentPlan === plan.id ? (
+              stripeCustomerId ? (
+                <button 
+                  onClick={onOpenPortal}
+                  disabled={loadingPortal}
+                  className="w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                >
+                  {loadingPortal ? (
+                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Check size={18} />
+                      Plano Ativo
+                    </>
+                  )}
+                </button>
               ) : (
-                `Começar ${plan.name}`
-              )}
-            </button>
+                <div className="w-full py-4 rounded-2xl font-bold text-sm bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center gap-2 cursor-not-allowed">
+                  <Check size={18} />
+                  Plano Ativo
+                </div>
+              )
+            ) : (
+              <button 
+                onClick={() => onCheckout(plan.id || '')}
+                disabled={loadingPlan !== null}
+                className={cn(
+                  "w-full py-4 rounded-2xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2",
+                  plan.buttonVariant === 'primary' 
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700" 
+                    : "bg-slate-900 text-white hover:bg-slate-800"
+                )}
+              >
+                {loadingPlan === plan.id ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    Upgrade para {plan.name}
+                    <ArrowRight size={18} />
+                  </>
+                )}
+              </button>
+            )}
           </div>
         ))}
       </div>
 
-      <div className="mt-20 p-10 bg-slate-900 rounded-[3rem] text-center text-white relative overflow-hidden group">
-        <div className="absolute top-0 right-0 p-12 bg-blue-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-blue-600/30 transition-all duration-700" />
-        <div className="relative z-10 max-w-2xl mx-auto">
-          <h3 className="text-3xl font-black mb-4">Precisa de uma solução sob medida?</h3>
-          <p className="text-slate-400 mb-8 font-medium">
-            Fale com nossos especialistas em gestão patrimonial e descubra como podemos ajudar sua empresa a economizar e ter mais controle.
-          </p>
-          <button className="px-8 py-4 bg-white text-slate-900 rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl">
-            Falar com Consultor
-          </button>
+      {stripeCustomerId && (
+        <div className="mt-20 p-12 bg-slate-900 rounded-[3rem] text-center text-white relative overflow-hidden group">
+          <div className="absolute top-0 right-0 -translate-y-12 translate-x-12 w-64 h-64 bg-blue-600/20 rounded-full blur-3xl group-hover:bg-blue-600/30 transition-colors" />
+          <div className="absolute bottom-0 left-0 translate-y-12 -translate-x-12 w-64 h-64 bg-indigo-600/20 rounded-full blur-3xl group-hover:bg-indigo-600/30 transition-colors" />
+          
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="p-4 bg-white/10 rounded-2xl backdrop-blur-md mb-6 ring-1 ring-white/20">
+              <Settings className="text-blue-400" size={32} />
+            </div>
+            <h3 className="text-3xl font-black mb-4">Já é assinante?</h3>
+            <p className="text-slate-400 max-w-lg mb-10 text-lg">
+              Gerencie suas faturas, altere o método de pagamento ou cancele sua assinatura diretamente pelo nosso portal seguro do Stripe.
+            </p>
+            <button
+              onClick={onOpenPortal}
+              disabled={loadingPortal}
+              className="px-12 py-5 bg-white text-slate-900 rounded-2xl font-black text-sm transition-all hover:bg-blue-50 active:scale-[0.98] shadow-2xl flex items-center gap-3"
+            >
+              {loadingPortal ? (
+                <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <ExternalLink size={20} />
+                  ACESSAR PORTAL DO CLIENTE
+                </>
+              )}
+            </button>
+
+            <div className="mt-10 flex items-center gap-8 text-slate-500">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Portal Seguro</span>
+              </div>
+              <div className="w-px h-4 bg-slate-800" />
+              <div className="flex items-center gap-2">
+                <CreditCard size={16} />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Stripe Billing</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -3112,7 +3267,7 @@ export default function App() {
   const { 
     assets, categorias, filiais, audits, loading, addCategoria, updateCategoria, removeCategoria, addFilial, removeFilial, stats, 
     addAsset, updateAsset, deleteAsset, bulkAddAssets, startAudit, toggleAssetAudit, finalizeAudit, deleteAudit,
-    error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, plano, updateEmpresaNome, refresh
+    error: categoriaErro, setError: setCategoriaErro, empresaId, empresaNome, plano, stripeCustomerId, updateEmpresaNome, refresh
   } = useAssets();
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = React.useState<any>(null);
@@ -3197,19 +3352,8 @@ export default function App() {
           const data = await response.json();
           
           if (data.success && data.companyId) {
-            // Atualizar o plano na tabela empresas
-            const { error: updateError } = await supabase
-              .from('empresas')
-              .update({ 
-                plano: data.planId,
-                stripe_customer_id: data.customerId
-              })
-              .eq('id', data.companyId);
-            
-            if (updateError) throw updateError;
-            
-            // Forçar atualização do estado local
-            alert(`Pagamento processado com sucesso! Sua empresa agora está no plano ${data.planId === 'basico' ? 'Básico' : data.planId}.`);
+            // Plano atualizado com sucesso no servidor
+            alert(`Pagamento processado com sucesso! Sua empresa agora está no plano ${data.planId === 'basico' ? 'Básico' : data.planId === 'profissional' ? 'Profissional' : 'Enterprise'}.`);
             // Recarregar para garantir que todos os limites sejam atualizados
             window.location.href = '/';
           } else {
@@ -3235,7 +3379,9 @@ export default function App() {
   // Redirecionar para configurações se a empresa ou o nome não existir
   React.useEffect(() => {
     if (isAuthenticated && !loading) {
-      if ((!empresaId || !empresaNome) && view !== 'configuracoes') {
+      const hasEmpresa = !!empresaId;
+      if (!hasEmpresa && view !== 'configuracoes' && view !== 'plans') {
+        console.log('🔄 Redirecionando para configurações: Empresa ausente.');
         setView('configuracoes');
       }
     }
@@ -3498,18 +3644,18 @@ export default function App() {
               <ExternalLink size={18} className="transition-transform duration-200 group-hover:scale-110" />
               <span>Pedir novas placas</span>
             </a>
-            <SidebarItem icon={CreditCard} label="Plano" active={view === 'plans'} onClick={() => { setView('plans'); setIsSidebarOpen(false); }} />
+            <SidebarItem icon={CreditCard} label="Planos" active={view === 'plans'} onClick={() => { setView('plans'); setIsSidebarOpen(false); }} />
           </nav>
         </div>
         <div className="mt-auto p-6 border-t border-slate-800">
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">
-                {currentUser?.companyName?.charAt(0) || 'U'}
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+                {(empresaNome || currentUser?.companyName || 'U').charAt(0)}
               </div>
               <div className="text-xs text-slate-400 min-w-0">
                 <p className="text-white font-medium truncate flex items-center gap-2">
-                  {currentUser?.companyName || 'Empresa'}
+                  {empresaNome || currentUser?.companyName || 'Empresa'}
                   {plano && plano !== 'free' && (
                     <span className="bg-blue-600 text-white text-[8px] px-1.5 py-0.5 rounded uppercase font-black shrink-0">
                       {plano}
@@ -3517,6 +3663,11 @@ export default function App() {
                   )}
                 </p>
                 <p className="truncate">{currentUser?.email}</p>
+                {plano && (
+                  <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest mt-0.5">
+                    Plano: {plano}
+                  </p>
+                )}
               </div>
             </div>
             <button 
@@ -3697,7 +3848,7 @@ export default function App() {
               clearError={() => setCategoriaErro(null)}
             />
           )}
-          {view === 'plans' && <PlansView user={currentUser} empresaId={empresaId} />}
+          {view === 'plans' && <PlansView user={currentUser} empresaId={empresaId} stripeCustomerId={stripeCustomerId} currentPlan={plano} />}
           {view === 'configuracoes' && (
             <div className="max-w-2xl mx-auto py-8">
               <div className="bg-white rounded-3xl p-10 border border-slate-100 shadow-xl shadow-slate-200/50">
@@ -3711,7 +3862,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {(!empresaId || !empresaNome) ? (
+                {!empresaId ? (
                   <div className="space-y-8">
                     <div className="p-6 bg-amber-50 border border-amber-100 rounded-3xl flex items-start gap-5">
                       <AlertTriangle className="text-amber-600 shrink-0 mt-1" size={24} />
@@ -3722,7 +3873,7 @@ export default function App() {
                         </p>
                       </div>
                     </div>
-                    <SetupCompany user={currentUser} onComplete={() => refresh()} embedded={true} />
+                    <SetupCompany user={currentUser} onComplete={async () => { await refresh(); setView('dashboard'); }} embedded={true} existingEmpresaId={empresaId} />
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -3831,7 +3982,13 @@ NOTIFY pgrst, 'reload schema';`}
                                 setIsSavingCompany(true);
                                 const success = await updateEmpresaNome(tempCompanyName);
                                 if (success) {
+                                  const updatedName = tempCompanyName.trim();
                                   setTempCompanyName(null);
+                                  setCurrentUser((prev: any) => prev ? { 
+                                    ...prev, 
+                                    companyName: updatedName,
+                                    user_metadata: { ...prev.user_metadata, company_name: updatedName }
+                                  } : null);
                                 }
                                 setIsSavingCompany(false);
                               }}
